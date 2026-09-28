@@ -94,7 +94,7 @@ Get our contracts live on MST, and make the backend the reliable bridge between 
    export AGENT_ADDRESS=0x… ARBITRATOR_ADDRESS=0x…
    forge script script/Deploy.s.sol --rpc-url $MST_RPC_URL --private-key $ORG_KEY --broadcast
    ```
-4. Verify both contracts on the MST explorer (use its verification UI, or ask mentors for the testnet verifier URL).
+4. Verify both contracts on the MST testnet explorer, `https://testnet.mstscan.com` (Blockscout): `forge verify-contract --verifier blockscout --verifier-url <explorer API URL>`, typically `https://testnet.mstscan.com/api/`; confirm it on the explorer. See `docs/sdk/README.md`.
 5. Write `deployments.md`: addresses, deploy tx hashes, explorer links. Push to `main` and tell the team.
 6. With B2, write `docs/API.md`: every endpoint, plus the `Deal`, `SOW` and `DisputeScores` JSON shapes.
 

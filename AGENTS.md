@@ -33,6 +33,7 @@ Required reading, in order: `docs/MVP.md` (design) → `docs/TEAM_ROADMAP.md` (w
 - Stablecoin: `MockUSD` (6 decimals). Could be swapped for MST's tMUSD later.
 - MST SDKs: **SARAL** (MPC keyless login) and **WASMify** (ZK-backed verifiable execution). **Neither is publicly documented. Never invent their APIs.** Use only what is in `docs/sdk/` or the mentor-provided docs. If those are missing, stop and ask your user.
 - Deployed addresses: **only** from `deployments.md`. Never hardcode an address from memory.
+- Official MST docs are in docs/sdk/ — read them before using any MST-specific tool.
 
 ## 4. Non-negotiable rules
 

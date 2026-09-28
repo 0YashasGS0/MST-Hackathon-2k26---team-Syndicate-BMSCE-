@@ -18,4 +18,4 @@
 
 ## Config
 - `reviewPeriod` used for demo deals: —
-- Testnet explorer URL: —
+- Testnet explorer URL: https://testnet.mstscan.com (official, Blockscout-based; see `docs/sdk/README.md`)
