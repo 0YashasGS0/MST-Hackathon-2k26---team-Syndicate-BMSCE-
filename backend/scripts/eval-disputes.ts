@@ -24,7 +24,7 @@ if (!Number.isInteger(delayMs) || delayMs < 0) {
   console.error(`EVAL_DELAY_MS must be a non-negative integer, got "${process.env.EVAL_DELAY_MS}"`);
   process.exit(1);
 }
-const promptVersion = process.env.AGENT_PROMPT_VERSION || "v1";
+const promptVersion = process.env.AGENT_PROMPT_VERSION || "v3";
 if (!DISPUTE_PROMPTS[promptVersion]) {
   console.error(`unknown AGENT_PROMPT_VERSION "${promptVersion}" (available: ${Object.keys(DISPUTE_PROMPTS).join(", ")})`);
   process.exit(1);

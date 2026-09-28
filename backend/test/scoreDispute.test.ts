@@ -101,15 +101,12 @@ describe("scoreDispute", () => {
     expect(r.buyerBps).toBe(3500);
   });
 
-  it("fallback mode never calls the client; formula and hash stay real", async () => {
+  it("fallback mode never calls the client, and refuses a SOW that isn't a demo scenario (no generic fake ruling)", async () => {
     const llm = new MockLlm([good]);
     const d = deps(llm, { demoFallback: true });
-    const r = await scoreDispute(base, d);
+    await expect(scoreDispute(base, d)).rejects.toThrow(/doesn't match any demo scenario/);
     expect(llm.calls).toHaveLength(0);
-    expect(r.scores.map((s) => s.fulfilledPct)).toEqual([100, 50, 0]);
-    expect(r.buyerBps).toBe(3500);
-    expect(r.model).toBe("demo-fallback");
-    expect(hashJson(d.store.getRuling(r.reasoningHash))).toBe(r.reasoningHash);
+    expect(d.store.db.prepare("SELECT COUNT(*) AS n FROM dispute_rulings").get()).toEqual({ n: 0 });
   });
 
   it("prompt injection in the complaint stays inside <data> and doesn't change the output shape", async () => {

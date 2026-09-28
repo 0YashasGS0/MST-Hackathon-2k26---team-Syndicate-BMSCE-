@@ -29,6 +29,6 @@ const seeded = seedDemoDrafts(store, loadScenarios(), { buyer, seller, token, re
 console.log(`seeded ${seeded.length} demo drafts into ${process.env.DB_PATH || "./data/app.sqlite"} (buyer ${buyer.toLowerCase()}, seller ${seller.toLowerCase()})\n`);
 for (const s of seeded) {
   console.log(`scenario ${s.scenario}  draftId=${s.draftId}`);
-  console.log(`  sowHash:         ${s.sowHash}`);
+  console.log(`  sowHash:         ${s.sowHash}   ground-truth buyerBps: ${s.expectedBps}`);
   console.log(`  proposeDealArgs: ${JSON.stringify(s.proposeDealArgs)}`);
 }

@@ -185,34 +185,44 @@ Funded / Delivered ──raiseDispute──► Disputed ──agent──► Res
 
 ### 7.2 Dispute resolution (LLM scores, formula decides)
 
-1. **LLM step.** The agent receives the SOW, delivery proof and evidence, and outputs a fulfilment score per deliverable as an **integer percentage (0–100)**. Integers keep the formula identical across backend, browser and WASM:
+1. **LLM step (verdicts only, prompt v3).** The agent receives the SOW, delivery proof and evidence. For **every acceptance criterion** of every deliverable it returns a verdict: `met`, `not_met`, or `partial` — the last only for countable criteria, and then with integer counts `satisfied`/`total` (e.g. 12 of 20 items). The LLM never outputs a percentage; one that tries is rejected:
 
 ```json
 { "scores": [
-  { "id": "D1", "fulfilledPct": 100, "rationale": "Mobile layout works; screenshot E2" },
-  { "id": "D2", "fulfilledPct": 50, "rationale": "Only 10 of 20 menu items present; E1" },
-  { "id": "D3", "fulfilledPct": 0, "rationale": "Form does not send email; E3 video" }
+  { "id": "D2", "criteria": [
+    { "index": 0, "verdict": "partial", "satisfied": 12, "total": 20, "rationale": "Menu shows 12 of 20 items; E2", "evidenceRefs": ["E2"] },
+    { "index": 1, "verdict": "partial", "satisfied": 8,  "total": 12, "rationale": "4 of the 12 have no price; E2", "evidenceRefs": ["E2"] } ] },
+  { "id": "D3", "criteria": [
+    { "index": 0, "verdict": "not_met", "rationale": "No email arrives; E3", "evidenceRefs": ["E3"] },
+    { "index": 1, "verdict": "met",     "rationale": "Validation messages shown; E3", "evidenceRefs": ["E3"] } ] }
 ]}
 ```
 
-2. **Deterministic step.** A formula, not the LLM, computes the split:
+2. **Deterministic step (code, not the LLM).** Integer maths in `shared/src/split.ts`, mirrored in `split.wasm`:
 
 ```
-buyerBps = Σ floor(weightBps_i × (100 − fulfilledPct_i) / 100)
-         = 5000×0/100 + 3000×50/100 + 2000×100/100 = 0 + 1500 + 2000 = 3500  → 35% refund to buyer, 65% to seller
+criterion score = met 100 | not_met 0 | partial floor(100 × satisfied / total)
+fulfilledPct_i  = floor(mean of deliverable i's criterion scores)
+buyerBps        = Σ floor(weightBps_i × (100 − fulfilledPct_i) / 100)
+
+Bakery example (weights 5000/3000/2000):
+  D1 met, met                    → 100
+  D2 12/20 → 60, 8/12 → 66       → floor(126/2) = 63
+  D3 not_met, met                → 50
+  buyerBps = 0 + floor(3000×37/100) + floor(2000×50/100) = 0 + 1110 + 1000 = 2110 → 21.1% refund to buyer
 ```
 
-**Rounding:** floor is applied per deliverable, and the remainder (at most 1 bps per deliverable) goes to the seller. This matches the contract's `toSeller = amount − toBuyer`. Example: weights 3333/3333/3334 with every score at 50 → 1666 + 1666 + 1667 = **4999** bps to the buyer (not 5000), so the seller gets 5001.
+**Rounding:** floor is applied per criterion, per deliverable mean and per deliverable share, and the remainder goes to the seller. This matches the contract's `toSeller = amount − toBuyer`. Example: weights 3333/3333/3334 with every deliverable at 50 → 1666 + 1666 + 1667 = **4999** bps to the buyer (not 5000), so the seller gets 5001.
 
-3. **On-chain step.** `reasoningHash = keccak256(canonicalJSON({ scores, buyerBps, model, promptVersion, inputsHash }))`. The agent wallet then calls `proposeResolution(id, buyerBps, reasoningHash)`.
+3. **On-chain step.** `reasoningHash = hashJson(Reasoning)`: RFC 8785 canonical JSON → keccak256 of `{ dealId, sowHash, deliveryHash, evidenceHash, scores (with every verdict), buyerBps, model, promptVersion }` (see `docs/API.md`). The agent wallet then calls `proposeResolution(id, buyerBps, reasoningHash)`. Anyone can recompute every percentage from the stored verdicts and the hash from the object (`verifyRuling`, also in the browser).
 
 This gives you:
-- **Explainable** rulings: each deliverable has a score and a rationale.
+- **Explainable** rulings: every acceptance criterion has a verdict and a rationale citing evidence.
 - **Deterministic** payouts: the same scores always produce the same split.
 - **Auditable** decisions: anyone can recompute the hash and the formula.
 - **Safe** execution: the agent can't move money.
 
-**Prompt-injection defence:** evidence is untrusted input. Put it in a clearly delimited data block in the prompt and instruct the model to treat it as data only. Validate the output against a JSON schema, and reject scores that aren't integers from 0 to 100 or unknown deliverable IDs.
+**Prompt-injection defence:** evidence is untrusted input. Put it in a clearly delimited data block in the prompt and instruct the model to treat it as data only. Validate the output against a JSON schema: every criterion index exactly once, counts only for `partial` with 0 ≤ satisfied ≤ total, no unknown deliverable IDs, and no percentages from the model.
 
 ---
 

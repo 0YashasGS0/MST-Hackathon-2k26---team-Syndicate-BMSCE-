@@ -54,7 +54,7 @@ try {
       evidenceNotes:
         "menu-screenshot.png: menu page shows 12 items, 4 without prices. form-test.mp4: form submitted at 10:02, owner inbox empty after 1 hour. homepage-mobile.png: homepage renders correctly on a phone.",
     },
-    { llm, store, demoFallback: false, promptVersion: process.env.AGENT_PROMPT_VERSION || "v1", backoff: rec.backoff },
+    { llm, store, demoFallback: false, promptVersion: process.env.AGENT_PROMPT_VERSION || "v3", backoff: rec.backoff },
   );
   rec.print();
   console.log("validation: PASSED");

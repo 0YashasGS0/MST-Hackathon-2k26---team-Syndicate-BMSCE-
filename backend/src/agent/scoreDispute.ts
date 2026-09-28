@@ -4,12 +4,14 @@
 import { z } from "zod";
 import { computeBuyerBps, hashJson, hashSow, parseSow, type Reasoning, type RulingScore, type Sow } from "@kernel-exploits/shared";
 import { SowStore } from "../sow/store";
+import { DemoFallbackError, findDemoScenario, groundTruthScores } from "./demoFallback";
+import type { Scenario } from "./scenarios";
 import type { ToolDef } from "./llm";
 import type { BackoffOptions } from "./resilience";
 import { CRITERIA_PROMPT_VERSIONS, SYSTEM_V3, buildPromptV3, scoreToolV3For, validateCriteriaScores } from "./scoreCriteria";
 import { AgentValidationError, LlmUnavailableError, callToolWithRetry, escapeData, type LlmChain, type Validated } from "./toolRetry";
 
-export { AgentValidationError as DisputeScoringError, LlmUnavailableError };
+export { AgentValidationError as DisputeScoringError, DemoFallbackError, LlmUnavailableError };
 
 export type DisputeInput = {
   dealId: number;
@@ -31,8 +33,12 @@ export type Ruling = { scores: Score[]; buyerBps: number; reasoningHash: string;
 export type ScorerDeps = {
   llm?: LlmChain; // required unless demoFallback (agent/index.ts fills it from env: primary + LLM_FALLBACK_MODELS)
   backoff?: BackoffOptions;
-  demoFallback?: boolean; // default env AGENT_DEMO_FALLBACK === "true"
-  promptVersion?: string; // default env AGENT_PROMPT_VERSION || "v1"
+  /** DEMO ONLY: rule demo-scenario SOWs with their ground truth, no LLM. Default env AGENT_DEMO_FALLBACK === "true". */
+  demoFallback?: boolean;
+  /** DEMO ONLY: if every live model fails (quota, network), use the ground-truth fallback. Default env AGENT_FALLBACK_ON_FAILURE === "true". */
+  fallbackOnFailure?: boolean;
+  scenarios?: Scenario[]; // default: backend/demo/scenarios
+  promptVersion?: string; // default env AGENT_PROMPT_VERSION || "v3" (frozen)
   store?: SowStore; // default: shared DB at DB_PATH
   now?: () => number;
 };
@@ -127,7 +133,8 @@ let defaultStore: SowStore | undefined;
 
 export async function scoreDispute(input: DisputeInput, deps: ScorerDeps = {}): Promise<Ruling> {
   const demoFallback = deps.demoFallback ?? process.env.AGENT_DEMO_FALLBACK === "true";
-  const promptVersion = deps.promptVersion ?? (process.env.AGENT_PROMPT_VERSION || "v1");
+  const fallbackOnFailure = deps.fallbackOnFailure ?? process.env.AGENT_FALLBACK_ON_FAILURE === "true";
+  let promptVersion = deps.promptVersion ?? (process.env.AGENT_PROMPT_VERSION || "v3");
   const system = DISPUTE_PROMPTS[promptVersion];
   if (!system) throw new Error(`unknown AGENT_PROMPT_VERSION "${promptVersion}" (available: ${Object.keys(DISPUTE_PROMPTS).join(", ")})`);
   const store = deps.store ?? (defaultStore ??= new SowStore());
@@ -138,29 +145,45 @@ export async function scoreDispute(input: DisputeInput, deps: ScorerDeps = {}): 
 
   let scores: Score[];
   let model: string;
+
+  /** DEMO ONLY: the matching scenario's ground-truth verdicts through the normal v3 code path. */
+  const fallback = (label: string): { scores: Score[]; model: string } | undefined => {
+    const sc = findDemoScenario(sow, deps.scenarios);
+    if (!sc) return undefined;
+    const gt = groundTruthScores(sc, sow);
+    promptVersion = "v3";
+    store.logAgentCall(
+      { subject: `deal:${input.dealId}`, kind: "score-dispute", attempt: 0, provider: "demo", model: label, promptVersion, request: { demoScenario: sc.id }, response: { scores: gt } },
+      now(),
+    );
+    return { scores: gt, model: label };
+  };
+
   if (demoFallback) {
-    const fixed = [100, 50];
-    scores = sow.deliverables.map((d, i) => ({
-      id: d.id,
-      fulfilledPct: fixed[i] ?? 0,
-      rationale: "Demo fallback score (AGENT_DEMO_FALLBACK=true); not produced by the model.",
-      evidenceRefs: [],
-    }));
-    model = "demo-fallback";
+    const fb = fallback("demo-fallback");
+    if (!fb) throw new DemoFallbackError("AGENT_DEMO_FALLBACK is on, but this SOW doesn't match any demo scenario (backend/demo/scenarios); no ruling produced");
+    ({ scores, model } = fb);
   } else {
-    const llm = deps.llm;
-    if (!llm) throw new LlmUnavailableError("no LLM client configured (set LLM_API_KEY, or AGENT_DEMO_FALLBACK=true)");
-    const criteriaMode = CRITERIA_PROMPT_VERSIONS.has(promptVersion);
-    // The model that actually answered (after any fallback) goes into the reasoning object and reasoningHash.
-    ({ value: scores, model } = await callToolWithRetry<Score[]>({
-      llm,
-      system,
-      prompt: criteriaMode ? buildPromptV3(sow, input) : buildPrompt(sow, input),
-      tool: criteriaMode ? scoreToolV3For(sow) : scoreToolFor(sow),
-      validate: (raw): Validated<Score[]> => (criteriaMode ? validateCriteriaScores(raw, sow) : validateScores(raw, sow)),
-      onAttempt: (a) => store.logAgentCall({ subject: `deal:${input.dealId}`, kind: "score-dispute", promptVersion, ...a }, now()),
-      backoff: deps.backoff,
-    }));
+    try {
+      const llm = deps.llm;
+      if (!llm) throw new LlmUnavailableError("no LLM client configured (set LLM_API_KEY, or AGENT_DEMO_FALLBACK=true)");
+      const criteriaMode = CRITERIA_PROMPT_VERSIONS.has(promptVersion);
+      // The model that actually answered (after any fallback) goes into the reasoning object and reasoningHash.
+      ({ value: scores, model } = await callToolWithRetry<Score[]>({
+        llm,
+        system,
+        prompt: criteriaMode ? buildPromptV3(sow, input) : buildPrompt(sow, input),
+        tool: criteriaMode ? scoreToolV3For(sow) : scoreToolFor(sow),
+        validate: (raw): Validated<Score[]> => (criteriaMode ? validateCriteriaScores(raw, sow) : validateScores(raw, sow)),
+        onAttempt: (a) => store.logAgentCall({ subject: `deal:${input.dealId}`, kind: "score-dispute", promptVersion, ...a }, now()),
+        backoff: deps.backoff,
+      }));
+    } catch (err) {
+      // Only when every live model failed (not on invalid model output), and only for demo scenarios.
+      const fb = fallbackOnFailure && err instanceof LlmUnavailableError ? fallback("demo-fallback (live failed)") : undefined;
+      if (!fb) throw err;
+      ({ scores, model } = fb);
+    }
   }
 
   const buyerBps = computeBuyerBps(sow.deliverables, scores);

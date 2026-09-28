@@ -1,5 +1,8 @@
 // seed:demo logic: one draft per demo scenario, already merged (fixed SOW, no LLM call) and approved by both
 // parties, so POST /drafts/:id/approve-sow returns proposeDealArgs immediately. Idempotent (fixed ids "demo-<id>").
+// The scored content (title, amount, deliverables, exclusions) is copied verbatim from the scenario file, so the
+// ground-truth demo fallback recognises these drafts (demoFingerprint). Parties, token and deadlines are the demo
+// wallets and a fresh deadline, so the full sowHash differs from the fixture's placeholders by design.
 import { hashSow, parseSow } from "@kernel-exploits/shared";
 import type { Scenario } from "../agent/scenarios";
 import type { SowStore } from "./store";
@@ -16,6 +19,7 @@ export type SeededDraft = {
   scenario: string;
   draftId: string;
   sowHash: string;
+  expectedBps: number; // ground-truth buyerBps (what the fallback / a perfect ruling gives)
   proposeDealArgs: { seller: string; amount: string; sowHash: string; deliverBy: number; reviewPeriod: number };
 };
 
@@ -48,6 +52,7 @@ export function seedDemoDrafts(store: SowStore, scenarios: Scenario[], o: SeedOp
       scenario: sc.id,
       draftId: id,
       sowHash,
+      expectedBps: sc.expectedBps,
       proposeDealArgs: { seller: sow.seller, amount: sow.amount, sowHash, deliverBy: sow.deliveryDeadline, reviewPeriod: sow.reviewWindowSecs },
     };
   });
