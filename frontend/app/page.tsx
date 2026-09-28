@@ -1,20 +1,32 @@
 "use client";
-// Landing page = login. Phone + OTP once per device; AuthGate sends signed-in users onward.
-import { useState } from "react";
+// Landing page = login. Phone + OTP once per device. If the account is registered on another device, the
+// security PIN is also required, the old device is removed and a 24 h cooling period starts (like UPI apps).
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { deviceAccount } from "@/lib/device-key";
 import { useSession } from "@/components/session";
 import { Logo } from "@/components/Header";
-import { Button, inputCls } from "@/components/ui";
+import { PinInput } from "@/components/Pin";
+import { AlertIcon } from "@/components/icons";
+import { Button, cx, inputCls } from "@/components/ui";
 
-type Step = "phone" | "otp";
+type Step = "phone" | "otp" | "device";
 
 export default function LoginPage() {
   const { deviceId, signIn, notice } = useSession();
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
+  const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [resendIn, setResendIn] = useState(0);
+
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
 
   const validPhone = /^[6-9]\d{9}$/.test(phone);
 
@@ -25,6 +37,7 @@ export default function LoginPage() {
     try {
       await api.requestOtp(phone);
       setStep("otp");
+      setResendIn(30);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -37,9 +50,25 @@ export default function LoginPage() {
     setBusy(true);
     setError(undefined);
     try {
-      signIn(await api.verifyOtp(phone, otp, deviceId));
+      const r = await api.verifyOtp(phone, otp, deviceId, deviceAccount().address);
+      if (r.status === "ok") return signIn(r.user);
+      setStep("device");
+      setBusy(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      setOtp("");
+      setBusy(false);
+    }
+  }
+
+  async function confirmDevice(p: string) {
+    setBusy(true);
+    setError(undefined);
+    try {
+      signIn(await api.verifyNewDevice(phone, deviceId, p));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setPin("");
       setBusy(false);
     }
   }
@@ -47,7 +76,7 @@ export default function LoginPage() {
   return (
     <div className="grid min-h-dvh lg:grid-cols-2">
       {/* brand panel: top banner on phones, left half on laptops */}
-      <section className="flex flex-col justify-between bg-accent px-6 pb-10 pt-12 text-accent-fg sm:px-10 lg:p-14">
+      <section className="hero-gradient flex flex-col justify-between px-6 pb-10 pt-12 text-white sm:px-10 lg:p-14">
         <span className="rounded-2xl self-start bg-white px-3 py-2 text-[#16161a]">
           <Logo />
         </span>
@@ -94,9 +123,35 @@ export default function LoginPage() {
                 {busy ? "Sending OTP…" : "Get OTP"}
               </Button>
               <p className="text-xs text-muted">
-                Your account will be registered to this device. Logging in on another device will sign you out here.
+                Your account will be registered to this device. Moving it to another device needs your OTP and security PIN.
               </p>
             </form>
+          ) : step === "device" ? (
+            <div className="space-y-5">
+              <div>
+                <span className="grid h-12 w-12 place-items-center rounded-2xl bg-warning/10 text-warning">
+                  <AlertIcon className="h-6 w-6" />
+                </span>
+                <h2 className="mt-4 text-2xl font-semibold">New device detected</h2>
+                <p className="mt-1 text-sm text-muted">
+                  Your account is registered on another device. Enter your security PIN to move it here.
+                </p>
+              </div>
+              <ul className="space-y-2 rounded-2xl bg-surface-2 p-4 text-sm">
+                <li>• Your other device will be logged out and removed</li>
+                <li>• For 24 hours, payments above ₹5,000 are paused on this device</li>
+                <li>• If this wasn&apos;t you, don&apos;t continue and contact support</li>
+              </ul>
+              <PinInput value={pin} onChange={setPin} onComplete={confirmDevice} error={!!error} />
+              <p className={cx("text-center text-sm", busy ? "text-muted" : "invisible")}>Verifying…</p>
+              <button
+                type="button"
+                className="w-full text-center text-sm font-medium text-muted hover:text-foreground"
+                onClick={() => (setStep("phone"), setOtp(""), setPin(""), setError(undefined))}
+              >
+                Cancel
+              </button>
+            </div>
           ) : (
             <form onSubmit={verify} className="space-y-5">
               <div>
@@ -121,6 +176,15 @@ export default function LoginPage() {
               <Button size="lg" className="w-full" disabled={otp.length !== 6 || busy}>
                 {busy ? "Verifying…" : "Verify & continue"}
               </Button>
+              <p className="text-center text-sm text-muted">
+                {resendIn > 0 ? (
+                  `Resend OTP in 0:${String(resendIn).padStart(2, "0")}`
+                ) : (
+                  <button type="button" className="font-medium text-accent" onClick={sendOtp}>
+                    Resend OTP
+                  </button>
+                )}
+              </p>
               {/* Demo only until PG wires SARAL OTP. */}
               <p className="text-center text-xs text-muted">Demo OTP: 123456</p>
             </form>

@@ -2,34 +2,42 @@
 
 /* Design tokens — change colours here, not in components. */
 :root {
-  --background: #f7f7f8;
+  --background: #f3f5f4;
   --surface: #ffffff;
-  --surface-2: #f1f1f3;
-  --foreground: #16161a;
-  --muted: #6b6b76;
-  --line: #e4e4e9;
-  --accent: #047857;
+  --surface-2: #f1f4f3;
+  --foreground: #0f1a16;
+  --muted: #5f6b67;
+  --line: #e3e8e6;
+  --accent: #0a7a55;
+  --accent-strong: #065f46;
+  --accent-soft: #e6f4ee;
   --accent-fg: #ffffff;
   --success: #15803d;
   --warning: #b45309;
-  --danger: #b91c1c;
-  --info: #0f766e;
+  --danger: #c2410c;
+  --info: #0e7490;
+  --elev-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 2px 8px rgb(16 24 40 / 0.05);
+  --elev-raised: 0 8px 24px rgb(6 95 70 / 0.18);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0c0c0f;
-    --surface: #15151a;
-    --surface-2: #1d1d24;
-    --foreground: #ececf1;
-    --muted: #9a9aa6;
-    --line: #2a2a33;
+    --background: #0b0f0e;
+    --surface: #141a18;
+    --surface-2: #1b2320;
+    --foreground: #e9efec;
+    --muted: #93a19c;
+    --line: #26302c;
     --accent: #34d399;
-    --accent-fg: #0c0c0f;
+    --accent-strong: #059669;
+    --accent-soft: #10291f;
+    --accent-fg: #06201a;
     --success: #4ade80;
     --warning: #fbbf24;
-    --danger: #f87171;
-    --info: #2dd4bf;
+    --danger: #fb923c;
+    --info: #22d3ee;
+    --elev-card: 0 1px 2px rgb(0 0 0 / 0.3);
+    --elev-raised: 0 8px 24px rgb(0 0 0 / 0.4);
   }
 }
 
@@ -41,11 +49,15 @@
   --color-muted: var(--muted);
   --color-line: var(--line);
   --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
   --color-accent-fg: var(--accent-fg);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --color-info: var(--info);
+  --shadow-card: var(--elev-card);
+  --shadow-raised: var(--elev-raised);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -53,4 +65,18 @@
 body {
   background: var(--background);
   color: var(--foreground);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Brand band used behind the home header and hero cards. */
+.hero-gradient {
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgb(255 255 255 / 0.14) 0%, transparent 55%),
+    linear-gradient(135deg, #0a7a55 0%, #065f46 60%, #064e3b 100%);
+}
+
+/* Amounts line up and don't jump while typing. */
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }

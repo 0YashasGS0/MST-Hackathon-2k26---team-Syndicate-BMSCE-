@@ -30,7 +30,8 @@ export function SowList({ sow }: { sow: Sow }) {
         ))}
       </ol>
       <p className="mt-4 rounded-xl bg-surface-2 px-3 py-2 text-xs text-muted">
-        Deliver by {fmtDate(sow.deliveryDeadline)} · {Math.round(sow.reviewWindowSecs / 86400)} days to review after delivery
+        Deliver by {sow.deliveryDeadline ? fmtDate(sow.deliveryDeadline) : "— to be agreed"} ·{" "}
+        {Math.round(sow.reviewWindowSecs / 86400)} days to review after delivery
       </p>
     </div>
   );

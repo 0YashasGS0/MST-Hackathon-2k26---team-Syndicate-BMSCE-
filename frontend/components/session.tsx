@@ -1,11 +1,13 @@
 "use client";
-// Device-bound session, UPI style: sign in once with phone + OTP, stay signed in on this device.
-// The SARAL MPC wallet behind the account is never shown. Signing in on another device takes over
-// the account; this device finds out on its next launch via checkDevice and signs out.
+// Device-bound session, UPI style:
+// - sign in once per device with phone + OTP; a new device also needs the security PIN and removes the old one
+// - the app locks with the PIN every time it's opened, and again after 2 minutes in the background
+// - the device checks every 15 s that it's still the registered one, and signs out if not
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
+import { LockScreen } from "./Pin";
 
 type Session = {
   ready: boolean;
@@ -13,87 +15,151 @@ type Session = {
   deviceId: string;
   notice?: string;
   signIn: (u: User) => void;
-  updateUser: (patch: Partial<User>) => void;
+  updateUser: (u: User) => void;
   signOut: (notice?: string) => void;
 };
 
 const USER_KEY = "fe.session.user";
 const DEVICE_KEY = "fe.device.id";
+const UNLOCK_KEY = "fe.unlocked"; // sessionStorage: cleared when the tab/app is closed
+const RELOCK_AFTER_MS = 2 * 60_000;
+const TAKEN_OVER = "Your account was registered on another device, so you were signed out here.";
 
-const read = (k: string) => {
-  try {
-    return localStorage.getItem(k);
-  } catch {
-    return null;
-  }
-};
-const write = (k: string, v: string | null) => {
-  try {
-    if (v === null) localStorage.removeItem(k);
-    else localStorage.setItem(k, v);
-  } catch {}
-};
+const store = (s: () => Storage) => ({
+  get: (k: string) => {
+    try {
+      return s().getItem(k);
+    } catch {
+      return null;
+    }
+  },
+  set: (k: string, v: string | null) => {
+    try {
+      if (v === null) s().removeItem(k);
+      else s().setItem(k, v);
+    } catch {}
+  },
+});
+const local = store(() => localStorage);
+const tab = store(() => sessionStorage);
 
-const Ctx = createContext<Session | null>(null);
+// crypto.randomUUID only exists on https/localhost; phones opening the dev server over the LAN need a fallback.
+const newId = () =>
+  typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+const Ctx = createContext<(Session & { unlocked: boolean; unlock: () => void }) | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<User>();
   const [deviceId, setDeviceId] = useState("");
   const [notice, setNotice] = useState<string>();
+  const [unlocked, setUnlocked] = useState(false);
 
   useEffect(() => {
-    let id = read(DEVICE_KEY);
+    let id = local.get(DEVICE_KEY);
     if (!id) {
-      id = crypto.randomUUID();
-      write(DEVICE_KEY, id);
+      id = newId();
+      local.set(DEVICE_KEY, id);
     }
     let saved: User | undefined;
     try {
-      saved = JSON.parse(read(USER_KEY) ?? "null") ?? undefined;
+      saved = JSON.parse(local.get(USER_KEY) ?? "null") ?? undefined;
     } catch {}
     /* eslint-disable react-hooks/set-state-in-effect -- one-time restore from storage */
     setDeviceId(id);
     setUser(saved);
-    setReady(true);
+    setUnlocked(!!saved && tab.get(UNLOCK_KEY) === saved.phone);
     /* eslint-enable react-hooks/set-state-in-effect */
-    if (saved) {
-      api.checkDevice(saved.phone, id).then(({ valid }) => {
-        if (valid) return;
-        write(USER_KEY, null);
-        setUser(undefined);
-        setNotice("Your account was registered on another device, so you were signed out here.");
-      });
-    }
+    if (!saved) return setReady(true);
+    // Refresh the saved account from the server before routing, so stale copies can't send people to the
+    // wrong screen (e.g. "set your PIN" when one is already set).
+    api.getMe(saved.phone).then(
+      (fresh) => {
+        if (fresh) {
+          const merged = { ...saved, ...fresh, deviceId: id!, deviceKey: saved!.deviceKey };
+          local.set(USER_KEY, JSON.stringify(merged));
+          setUser(merged);
+        } else {
+          local.set(USER_KEY, null);
+          setUser(undefined);
+          setNotice("Please log in again.");
+        }
+        setReady(true);
+      },
+      () => setReady(true), // offline: use the saved copy
+    );
   }, []);
 
-  const signIn = useCallback((u: User) => {
-    write(USER_KEY, JSON.stringify(u));
-    setNotice(undefined);
-    setUser(u);
-  }, []);
-
-  const updateUser = useCallback((patch: Partial<User>) => {
+  const unlock = useCallback(() => {
     setUser((u) => {
-      if (!u) return u;
-      const next = { ...u, ...patch };
-      write(USER_KEY, JSON.stringify(next));
-      return next;
+      if (u) tab.set(UNLOCK_KEY, u.phone);
+      return u;
     });
+    setUnlocked(true);
   }, []);
 
   const signOut = useCallback((n?: string) => {
-    write(USER_KEY, null);
+    local.set(USER_KEY, null);
+    tab.set(UNLOCK_KEY, null);
     setNotice(n);
+    setUnlocked(false);
     setUser(undefined);
   }, []);
 
+  // Device binding: re-check on launch, every 15 s, and whenever the app comes back to the foreground.
+  // Coming back after RELOCK_AFTER_MS in the background locks the app again.
+  useEffect(() => {
+    if (!user || !deviceId) return;
+    let hiddenAt = 0;
+    const check = () =>
+      api.checkDevice(user.phone, deviceId).then(
+        ({ valid }) => !valid && signOut(TAKEN_OVER),
+        () => {}, // offline: keep the session
+      );
+    check();
+    const t = setInterval(check, 15_000);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") hiddenAt = Date.now();
+      else {
+        if (hiddenAt && Date.now() - hiddenAt > RELOCK_AFTER_MS) {
+          tab.set(UNLOCK_KEY, null);
+          setUnlocked(false);
+        }
+        check();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [user, deviceId, signOut]);
+
+  // A fresh login (OTP, plus PIN on a new device) counts as unlocking.
+  const signIn = useCallback((u: User) => {
+    local.set(USER_KEY, JSON.stringify(u));
+    tab.set(UNLOCK_KEY, u.phone);
+    setNotice(undefined);
+    setUnlocked(true);
+    setUser(u);
+  }, []);
+
+  const updateUser = useCallback((u: User) => {
+    local.set(USER_KEY, JSON.stringify(u));
+    setUser(u);
+  }, []);
+
   return (
-    <Ctx.Provider value={{ ready, user, deviceId, notice, signIn, updateUser, signOut }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ ready, user, deviceId, notice, signIn, updateUser, signOut, unlocked, unlock }}>
+      {children}
+    </Ctx.Provider>
   );
 }
 
-export function useSession() {
+export function useSession(): Session {
   const s = useContext(Ctx);
   if (!s) throw new Error("useSession must be used inside <SessionProvider>");
   return s;
@@ -106,25 +172,41 @@ export function useUser() {
   return user;
 }
 
-/** Routes people to login → KYC (first time only) → home, and hides pages until that's settled. */
+/** Where a signed-in user belongs, or null if the current path is fine. */
+function redirectFor(user: User | undefined, path: string): string | null {
+  if (!user) return path === "/" ? null : "/";
+  if (user.role === "arbitrator") return path.startsWith("/arbitrator") ? null : "/arbitrator";
+  if (path.startsWith("/arbitrator")) return "/home";
+  if (user.kycLevel === 0) return path === "/kyc" ? null : "/kyc";
+  if (!user.hasPin) return path === "/setup-pin" ? null : "/setup-pin";
+  return path === "/" || path === "/kyc" || path === "/setup-pin" ? "/home" : null;
+}
+
+/** Routes people to login → KYC → PIN setup (first time only) → home, and locks the app behind the PIN. */
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { ready, user } = useSession();
+  const ctx = useContext(Ctx)!;
+  const { ready, user, unlocked, unlock, signOut } = ctx;
   const path = usePathname();
   const router = useRouter();
-
-  const target = !ready
-    ? null
-    : !user
-      ? path === "/" ? null : "/"
-      : user.kycLevel === 0
-        ? path === "/kyc" ? null : "/kyc"
-        : path === "/" || path === "/kyc" ? "/home" : null;
+  const target = ready ? redirectFor(user, path) : null;
 
   useEffect(() => {
     if (target) router.replace(target);
   }, [target, router]);
 
   if (!ready || target) return <Splash />;
+  if (user?.hasPin && !unlocked)
+    return (
+      <LockScreen
+        name={user.name ?? "Welcome back"}
+        phone={user.phone}
+        onUnlock={async (pin) => {
+          await api.verifyPin(user.phone, pin);
+          unlock();
+        }}
+        onForgot={() => signOut()}
+      />
+    );
   return <>{children}</>;
 }
 

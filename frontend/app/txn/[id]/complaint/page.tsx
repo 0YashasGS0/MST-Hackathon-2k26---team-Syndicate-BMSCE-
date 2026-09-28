@@ -26,7 +26,7 @@ export default function ComplaintPage() {
   const proofsRef = useRef(proofs);
 
   useEffect(() => {
-    api.getDealSow(id).then(setSow);
+    api.getAgreement(id).then((a) => a && setSow(a.sow));
   }, [id]);
 
   useEffect(() => {
@@ -60,7 +60,8 @@ export default function ComplaintPage() {
     try {
       const form = new FormData(e.currentTarget);
       proofs.forEach((p) => form.append("files", p.file));
-      await api.raiseComplaint(id, form);
+      const party = deal!.buyer.toLowerCase() === user.address.toLowerCase() ? "buyer" : "seller";
+      await api.raiseComplaint(id, party, form, proofs.map((p) => p.file));
       router.push(`/txn/${id}/resolution`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

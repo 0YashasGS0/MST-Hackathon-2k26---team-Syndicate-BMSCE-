@@ -7,7 +7,8 @@ import { fmtDateTime, fmtInr, releasedAt } from "@/lib/format";
 import type { Complaint, Deal, Resolution, Sow } from "@/lib/types";
 import { useUser } from "@/components/session";
 import { useDeal } from "@/components/useDeal";
-import { Avatar, BackBar, Button, Card, cx, Loading, Screen, SectionTitle } from "@/components/ui";
+import { GavelIcon } from "@/components/icons";
+import { Avatar, BackBar, Badge, Button, Card, cx, Loading, Screen, SectionTitle } from "@/components/ui";
 
 export default function ResolutionPage() {
   const { id } = useParams<{ id: string }>();
@@ -23,17 +24,16 @@ export default function ResolutionPage() {
 
   useEffect(() => {
     api.getComplaint(id).then(setComplaint);
-    api.getDealSow(id).then(setSow);
+    api.getAgreement(id).then((a) => a && setSow(a.sow));
   }, [id]);
 
   useEffect(() => {
     if (hasProposal) api.getResolution(id).then(setResolution);
   }, [id, hasProposal]);
 
-  // While the complaint is being reviewed, check back every few seconds.
+  // Pick up the AI's proposal, the other party's decision and the arbitrator's ruling as they happen.
   useEffect(() => {
-    if (!reviewing) return;
-    const t = setInterval(reload, 2000);
+    const t = setInterval(reload, reviewing ? 2000 : 5000);
     return () => clearInterval(t);
   }, [reviewing, reload]);
 
@@ -41,6 +41,11 @@ export default function ResolutionPage() {
 
   const iAmBuyer = deal.buyer.toLowerCase() === user.address.toLowerCase();
   const other = iAmBuyer ? deal.sellerName : deal.buyerName;
+  const otherFirst = other.split(" ")[0];
+  const me = iAmBuyer ? "buyer" : "seller";
+  const iAccepted = !!deal.accepted?.[me];
+  const theyAccepted = !!deal.accepted?.[iAmBuyer ? "seller" : "buyer"];
+  const byArbitrator = deal.ruledBy === "arbitrator";
 
   async function act(kind: "accept" | "escalate") {
     const msg =
@@ -49,7 +54,7 @@ export default function ResolutionPage() {
         : "Send this to a human arbitrator? Their decision will be final.";
     if (!confirm(msg)) return;
     setBusy(kind);
-    setDeal(kind === "accept" ? await api.acceptResolution(id) : await api.escalate(id));
+    setDeal(kind === "accept" ? await api.acceptResolution(id, me) : await api.escalate(id));
     setBusy(undefined);
   }
 
@@ -74,19 +79,41 @@ export default function ResolutionPage() {
         {reviewing && (
           <div className="mt-4 flex items-center gap-3 rounded-2xl bg-info/10 p-4 text-sm text-info">
             <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-info/30 border-t-info" />
-            Reviewing your proof against the agreement. This usually takes a minute.
+            Reviewing the proof against the agreement. This usually takes a minute.
           </div>
         )}
 
         {hasProposal && resolution && (
           <>
-            <SectionTitle>{deal.status === "ResolutionProposed" ? "Suggested resolution" : "Resolution"}</SectionTitle>
+            <SectionTitle
+              right={
+                deal.status === "ResolutionProposed" && (
+                  <span className="flex gap-1.5">
+                    <Badge tone={iAccepted ? "success" : "neutral"}>You {iAccepted ? "accepted" : "pending"}</Badge>
+                    <Badge tone={theyAccepted ? "success" : "neutral"}>
+                      {otherFirst} {theyAccepted ? "accepted" : "pending"}
+                    </Badge>
+                  </span>
+                )
+              }
+            >
+              {deal.status === "ResolutionProposed" ? "Suggested resolution" : byArbitrator ? "Arbitrator's decision" : "Resolution"}
+            </SectionTitle>
             <Split deal={deal} iAmBuyer={iAmBuyer} other={other} />
+
+            {byArbitrator && (
+              <Card className="mt-3">
+                <p className="flex items-center gap-2 text-sm font-semibold">
+                  <GavelIcon className="h-5 w-5 text-accent" /> Final ruling by the arbitrator
+                </p>
+                {deal.arbitratorNote && <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{deal.arbitratorNote}</p>}
+              </Card>
+            )}
 
             {deal.status === "ResolutionProposed" && (
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                <Button size="lg" className="flex-1" onClick={() => act("accept")} disabled={!!busy}>
-                  {busy === "accept" ? "Accepting…" : "Accept resolution"}
+                <Button size="lg" className="flex-1" onClick={() => act("accept")} disabled={!!busy || iAccepted}>
+                  {busy === "accept" ? "Accepting…" : iAccepted ? `Accepted · waiting for ${otherFirst}` : "Accept resolution"}
                 </Button>
                 <Button size="lg" variant="secondary" className="flex-1" onClick={() => act("escalate")} disabled={!!busy}>
                   {busy === "escalate" ? "Sending…" : "Not fair? Ask an arbitrator"}
@@ -99,7 +126,7 @@ export default function ResolutionPage() {
               </p>
             )}
 
-            <SectionTitle>How each part was judged</SectionTitle>
+            <SectionTitle>{byArbitrator ? "The AI's earlier assessment" : "How each part was judged"}</SectionTitle>
             <Card className="space-y-5">
               {resolution.scores.map((s) => {
                 const d = sow?.deliverables.find((x) => x.id === s.id);
@@ -130,7 +157,13 @@ export default function ResolutionPage() {
           </>
         )}
 
-        {complaint && <ComplaintCard complaint={complaint} sow={sow} />}
+        {complaint && (
+          <ComplaintCard
+            complaint={complaint}
+            sow={sow}
+            title={complaint.raisedBy === me ? "Your complaint" : `${otherFirst}'s complaint`}
+          />
+        )}
       </Screen>
     </>
   );
@@ -196,11 +229,11 @@ function Split({ deal, iAmBuyer, other }: { deal: Deal; iAmBuyer: boolean; other
   );
 }
 
-function ComplaintCard({ complaint, sow }: { complaint: Complaint; sow?: Sow }) {
+function ComplaintCard({ complaint, sow, title }: { complaint: Complaint; sow?: Sow; title: string }) {
   const parts = complaint.deliverableIds.map((d) => sow?.deliverables.find((x) => x.id === d)?.title ?? d);
   return (
     <>
-      <SectionTitle>Your complaint</SectionTitle>
+      <SectionTitle>{title}</SectionTitle>
       <Card>
         {parts.length > 0 && (
           <div className="mb-3 flex flex-wrap gap-1.5">

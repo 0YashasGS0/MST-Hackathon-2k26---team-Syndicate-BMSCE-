@@ -1,120 +1,180 @@
 "use client";
-// One scrolling screen, GPay / PhonePe style: pay first, then what's in progress, then history.
+// Home: quick actions (pay, request, QR, history), people you deal with, and payments still in progress.
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
-import { CAN_COMPLAIN, COMPLAINT_OPEN, fmtDate, fmtInr, fmtMonth, initiatedAt, isSettled, releasedAt } from "@/lib/format";
-import type { Deal, Draft } from "@/lib/types";
+import { CAN_COMPLAIN, COMPLAINT_OPEN, fmtDate, fmtInr, initiatedAt, isSettled } from "@/lib/format";
+import type { Contact, Deal, Draft } from "@/lib/types";
 import { useUser } from "@/components/session";
 import { Header } from "@/components/Header";
-import { Avatar, ButtonLink, Card, EmptyState, Loading, Screen, SectionTitle, StatusChip } from "@/components/ui";
+import { HistoryIcon, PeopleIcon, QrIcon, RequestIcon, SendIcon, ShieldIcon } from "@/components/icons";
+import { Avatar, Badge, ButtonLink, Card, EmptyState, ListRow, Loading, Screen, SectionTitle, StatusChip } from "@/components/ui";
+
+const HELD = ["Funded", "Delivered", "Disputed", "ResolutionProposed", "Escalated"];
 
 export default function Home() {
   const user = useUser();
   const [deals, setDeals] = useState<Deal[]>();
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [people, setPeople] = useState<Contact[]>();
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     api.listDeals(user.address).then(setDeals);
     api.listDrafts(user.address).then(setDrafts);
+    api.listPeople(user.address).then(setPeople);
   }, [user.address]);
 
   const me = user.address.toLowerCase();
   const inProgress = deals?.filter((d) => !isSettled(d)) ?? [];
-  const history = (deals?.filter(isSettled) ?? []).sort((a, b) => (releasedAt(b) ?? 0) - (releasedAt(a) ?? 0));
+  const held = inProgress.filter((d) => HELD.includes(d.status) && d.buyer.toLowerCase() === me);
+  const heldTotal = held.reduce((s, d) => s + BigInt(d.amount), 0n);
   const firstName = user.name?.split(" ")[0];
+  const pendingCount = inProgress.length + drafts.length;
 
   return (
     <>
-      <Header />
-      <Screen className="pt-6">
-        <p className="px-1 text-muted">{firstName ? `Hi ${firstName} 👋` : "Welcome 👋"}</p>
+      <div className="hero-gradient pb-24">
+        <Header />
+        <div className="mx-auto max-w-2xl px-5 pt-4 text-white sm:px-7">
+          <p className="text-sm text-white/75">{firstName ? `Good to see you, ${firstName}` : "Welcome"}</p>
+          <div className="mt-5 flex items-center gap-2 text-xs font-medium text-white/75">
+            <ShieldIcon className="h-4 w-4" />
+            Held safely for you
+          </div>
+          <p className="num mt-1 text-4xl font-semibold sm:text-5xl">{deals ? fmtInr(heldTotal) : "—"}</p>
+          <p className="mt-1 text-sm text-white/75">
+            {held.length === 0
+              ? "Nothing on hold right now"
+              : `Across ${held.length} payment${held.length > 1 ? "s" : ""}, released only when you approve`}
+          </p>
+        </div>
+      </div>
 
-        {/* 1. initiate payment */}
-        <Link
-          href="/pay/new"
-          className="mt-3 flex items-center gap-4 rounded-2xl bg-accent p-5 text-accent-fg shadow-sm transition hover:opacity-95 active:scale-[0.99] sm:p-6"
-        >
-          <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/20">
-            <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M7 17L17 7M9 7h8v8" />
-            </svg>
-          </span>
-          <span className="flex-1">
-            <span className="block text-lg font-semibold">Initiate payment</span>
-            <span className="block text-sm opacity-90">Money is held safely until the work is done</span>
-          </span>
-          <span className="text-2xl">›</span>
-        </Link>
+      <Screen className="-mt-16">
+        <Card className="grid grid-cols-4 gap-1 p-2 sm:gap-2 sm:p-4">
+          <Action href="/pay/new" icon={<SendIcon className="h-6 w-6" />} label="Pay" sub="Send money" />
+          <Action href="/pay/new?role=seller" icon={<RequestIcon className="h-6 w-6" />} label="Request" sub="Get paid" />
+          <Action href="/qr" icon={<QrIcon className="h-6 w-6" />} label="QR" sub="Scan or show" />
+          <Action href="/history" icon={<HistoryIcon className="h-6 w-6" />} label="History" sub="All payments" />
+        </Card>
 
-        {/* 2. in progress */}
-        <SectionTitle>In progress</SectionTitle>
+        {people && people.length > 0 && (
+          <>
+            <SectionTitle>People</SectionTitle>
+            <Card className="grid grid-cols-4 gap-y-4 px-2 py-4 sm:px-4">
+              {(showAll ? people : people.slice(0, 7)).map((p) => (
+                <Link key={p.phone} href={`/people/${p.phone}`} className="group flex flex-col items-center gap-1.5 text-center">
+                  <span className="transition group-hover:scale-105 group-active:scale-95">
+                    <Avatar name={p.name} size="md" />
+                  </span>
+                  <span className="w-full truncate px-1 text-xs font-medium">{p.name.split(" ")[0]}</span>
+                </Link>
+              ))}
+              {people.length > 7 && (
+                <button onClick={() => setShowAll((v) => !v)} className="group flex flex-col items-center gap-1.5 text-center">
+                  <span className="grid h-11 w-11 place-items-center rounded-full bg-surface-2 text-muted transition group-hover:scale-105">
+                    <PeopleIcon className="h-5 w-5" />
+                  </span>
+                  <span className="text-xs font-medium text-muted">{showAll ? "Less" : "More"}</span>
+                </button>
+              )}
+            </Card>
+          </>
+        )}
+
+        <SectionTitle right={pendingCount > 0 && <span className="text-xs font-medium text-muted">{pendingCount} active</span>}>
+          Pending payments
+        </SectionTitle>
         {!deals ? (
           <Loading />
-        ) : inProgress.length + drafts.length === 0 ? (
-          <EmptyState title="Nothing in progress">Payments you start will show up here.</EmptyState>
+        ) : pendingCount === 0 ? (
+          <EmptyState title="You're all caught up" icon={<ShieldIcon className="h-6 w-6" />}>
+            Payments you start or request will show up here.
+          </EmptyState>
         ) : (
           <div className="space-y-3">
             {drafts.map((d) => {
-              const other = d.buyer.toLowerCase() === me ? d.sellerName : d.buyerName;
+              const iAmBuyer = d.buyer.toLowerCase() === me;
+              const other = iAmBuyer ? d.sellerName : d.buyerName;
+              const myTerms = iAmBuyer ? d.buyerTerms : d.sellerTerms;
+              const [label, cta] = !myTerms
+                ? ["Add your terms", "Add terms"]
+                : d.status === "awaiting_other"
+                  ? [`Waiting for ${other.split(" ")[0]}`, "View"]
+                  : ["Agreement to sign", "Review & sign"];
               return (
                 <Card key={d.id} flush>
-                  <Link href={`/pay/agreement/${d.id}`} className="flex items-center gap-3 p-4">
-                    <Avatar name={other} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{other}</p>
-                      <p className="truncate text-sm text-muted">{d.purpose}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold">{fmtInr(d.price)}</p>
-                      <p className="text-xs text-warning">Agree terms</p>
-                    </div>
-                  </Link>
+                  <ListRow
+                    href={`/pay/agreement/${d.id}`}
+                    leading={<Avatar name={other} />}
+                    title={other}
+                    subtitle={`${iAmBuyer ? "You pay" : "You receive"} · ${d.purpose}`}
+                    trailing={<p className="num text-[15px] font-semibold">{fmtInr(d.price)}</p>}
+                  />
+                  <div className="flex items-center justify-between gap-2 border-t border-line/70 px-4 py-3 sm:px-5">
+                    <Badge tone={d.status === "awaiting_other" && myTerms ? "neutral" : "warning"}>{label}</Badge>
+                    <ButtonLink size="sm" variant="soft" href={`/pay/agreement/${d.id}`}>
+                      {cta}
+                    </ButtonLink>
+                  </div>
                 </Card>
               );
             })}
             {inProgress.map((d) => (
-              <InProgressRow key={d.id} deal={d} iAmBuyer={d.buyer.toLowerCase() === me} />
+              <PendingCard key={d.id} deal={d} iAmBuyer={d.buyer.toLowerCase() === me} />
             ))}
           </div>
-        )}
-
-        {/* 3. history */}
-        <SectionTitle>Payment history</SectionTitle>
-        {!deals ? null : history.length === 0 ? (
-          <EmptyState title="No payments yet" />
-        ) : (
-          <History deals={history} me={me} />
         )}
       </Screen>
     </>
   );
 }
 
-function InProgressRow({ deal, iAmBuyer }: { deal: Deal; iAmBuyer: boolean }) {
+function Action({ href, icon, label, sub }: { href: string; icon: ReactNode; label: string; sub: string }) {
+  return (
+    <Link href={href} className="group flex flex-col items-center gap-2 rounded-2xl px-0.5 py-3 text-center transition hover:bg-surface-2">
+      <span className="grid h-12 w-12 place-items-center sm:h-14 sm:w-14 rounded-2xl bg-accent-soft text-accent transition group-hover:scale-105 group-active:scale-95">
+        {icon}
+      </span>
+      <span>
+        <span className="block text-sm font-semibold tracking-tight">{label}</span>
+        <span className="hidden text-xs text-muted sm:block">{sub}</span>
+      </span>
+    </Link>
+  );
+}
+
+function PendingCard({ deal, iAmBuyer }: { deal: Deal; iAmBuyer: boolean }) {
   const other = iAmBuyer ? deal.sellerName : deal.buyerName;
   const base = `/txn/${deal.id}`;
   const complaintOpen = COMPLAINT_OPEN.includes(deal.status);
 
   return (
     <Card flush>
-      <Link href={base} className="flex items-center gap-3 p-4 pb-3">
-        <Avatar name={other} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-medium">{other}</p>
-          <p className="truncate text-sm text-muted">{deal.title}</p>
-        </div>
-        <div className="shrink-0 text-right">
-          <p className="font-semibold">{fmtInr(deal.amount)}</p>
-          <p className="text-xs text-muted">{fmtDate(initiatedAt(deal))}</p>
-        </div>
-      </Link>
-      <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
+      <ListRow
+        href={base}
+        leading={<Avatar name={other} />}
+        title={other}
+        subtitle={`${iAmBuyer ? "You pay" : "You receive"} · ${deal.title}`}
+        trailing={
+          <>
+            <p className="num text-[15px] font-semibold">{fmtInr(deal.amount)}</p>
+            <p className="text-xs text-muted">{fmtDate(initiatedAt(deal))}</p>
+          </>
+        }
+      />
+      <div className="flex flex-wrap items-center gap-2 border-t border-line/70 px-4 py-3 sm:px-5">
         <StatusChip status={deal.status} />
         <div className="ml-auto flex gap-2">
           {deal.status === "Accepted" && iAmBuyer && (
             <ButtonLink size="sm" href={`${base}/pay`}>
               Pay now
+            </ButtonLink>
+          )}
+          {deal.status === "Funded" && !iAmBuyer && (
+            <ButtonLink size="sm" variant="soft" href={base}>
+              Mark delivered
             </ButtonLink>
           )}
           {CAN_COMPLAIN.includes(deal.status) && (
@@ -130,43 +190,5 @@ function InProgressRow({ deal, iAmBuyer }: { deal: Deal; iAmBuyer: boolean }) {
         </div>
       </div>
     </Card>
-  );
-}
-
-function History({ deals, me }: { deals: Deal[]; me: string }) {
-  const groups = new Map<string, Deal[]>();
-  for (const d of deals) {
-    const k = fmtMonth(releasedAt(d) ?? initiatedAt(d));
-    groups.set(k, [...(groups.get(k) ?? []), d]);
-  }
-  return (
-    <div className="space-y-5">
-      {[...groups].map(([month, list]) => (
-        <div key={month}>
-          <p className="mb-2 px-1 text-xs font-medium text-muted">{month}</p>
-          <Card className="divide-y divide-line" flush>
-            {list.map((d) => {
-              const received = d.seller.toLowerCase() === me;
-              const other = received ? d.buyerName : d.sellerName;
-              return (
-                <Link key={d.id} href={`/txn/${d.id}`} className="flex items-center gap-3 p-4 hover:bg-surface-2">
-                  <Avatar name={other} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{other}</p>
-                    <p className="truncate text-xs text-muted">
-                      {received ? "Received" : "Paid"} · {fmtDate(releasedAt(d) ?? initiatedAt(d))}
-                    </p>
-                  </div>
-                  <p className={`shrink-0 font-semibold ${received ? "text-success" : ""}`}>
-                    {received ? "+" : ""}
-                    {fmtInr(d.amount)}
-                  </p>
-                </Link>
-              );
-            })}
-          </Card>
-        </div>
-      ))}
-    </div>
   );
 }

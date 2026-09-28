@@ -1,13 +1,18 @@
 "use client";
-// Both sides' terms → AI-drafted agreement → agree → pay.
+// Both sides' terms → drafted agreement → any disagreement resolved by both parties (never a silent
+// middle ground) → each party signs the agreement with their device key → deal is created.
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { fmtInr } from "@/lib/format";
-import type { Draft, SowVersion } from "@/lib/types";
+import { sowHash, verifySignature } from "@/lib/agreement";
+import { signHash } from "@/lib/device-key";
+import { fmtDate, fmtDateTime, fmtInr } from "@/lib/format";
+import type { Conflict, Draft, Party, SowVersion } from "@/lib/types";
 import { useUser } from "@/components/session";
 import { SowList } from "@/components/SowList";
-import { Avatar, BackBar, Button, Card, Loading, Screen, SectionTitle } from "@/components/ui";
+import { PinSheet } from "@/components/Pin";
+import { AlertIcon, CheckIcon, LockIcon, PenIcon } from "@/components/icons";
+import { Avatar, BackBar, Button, ButtonLink, Card, cx, inputCls, Loading, Screen, SectionTitle } from "@/components/ui";
 
 export default function AgreementPage() {
   const { draftId } = useParams<{ draftId: string }>();
@@ -15,19 +20,44 @@ export default function AgreementPage() {
   const user = useUser();
   const [draft, setDraft] = useState<Draft>();
   const [sow, setSow] = useState<SowVersion | null>(null);
-  const [busy, setBusy] = useState<"merge" | "agree">();
+  const [verified, setVerified] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
+  const [askPin, setAskPin] = useState(false);
 
+  const load = useCallback(
+    () =>
+      Promise.all([api.getDraft(draftId), api.getSow(draftId)]).then(
+        ([d, v]) => {
+          setDraft(d);
+          setSow(v);
+        },
+        (e) => setError(e instanceof Error ? e.message : String(e)),
+      ),
+    [draftId],
+  );
+
+  // Keep in sync with the other party's actions.
   useEffect(() => {
-    api.getDraft(draftId).then(setDraft, (e) => setError(e instanceof Error ? e.message : String(e)));
-    api.getSow(draftId).then(setSow);
-  }, [draftId]);
+    load();
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [load]);
 
-  async function run(label: "merge" | "agree", fn: () => Promise<void>) {
+  // Check every stored signature against the agreement text on this device.
+  useEffect(() => {
+    if (!sow) return;
+    Promise.all(sow.signatures.map(async (s) => [s.party, await verifySignature(sow.sow, s)] as const)).then((r) =>
+      setVerified(Object.fromEntries(r)),
+    );
+  }, [sow]);
+
+  async function run(label: string, fn: () => Promise<unknown>) {
     setBusy(label);
     setError(undefined);
     try {
       await fn();
+      await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -35,87 +65,287 @@ export default function AgreementPage() {
     }
   }
 
-  const prepare = () => run("merge", async () => setSow(await api.mergeSow(draftId)));
-  const agree = () =>
-    run("agree", async () => {
-      await api.approveSow(draftId, iAmBuyer ? "buyer" : "seller", sow!.version);
-      const { dealId } = await api.startDeal(draftId);
-      // The payer goes straight to paying; the receiver waits for the payer to fund.
-      router.push(iAmBuyer ? `/txn/${dealId}/pay` : `/txn/${dealId}`);
-    });
+  if (!draft)
+    return (
+      <>
+        <BackBar href="/home" title="Agreement" />
+        {error ? <p className="p-6 text-center text-danger">{error}</p> : <Loading />}
+      </>
+    );
 
-  const iAmBuyer = draft?.buyer.toLowerCase() === user.address.toLowerCase();
-  const other = draft ? (iAmBuyer ? draft.sellerName : draft.buyerName) : "";
-  const mine = iAmBuyer ? draft?.buyerConstraints : draft?.sellerPoints;
-  const theirs = iAmBuyer ? draft?.sellerPoints : draft?.buyerConstraints;
+  const me: Party = draft.buyer.toLowerCase() === user.address.toLowerCase() ? "buyer" : "seller";
+  const them: Party = me === "buyer" ? "seller" : "buyer";
+  const other = me === "buyer" ? draft.sellerName : draft.buyerName;
+  const otherFirst = other.split(" ")[0];
+  const myTerms = me === "buyer" ? draft.buyerTerms : draft.sellerTerms;
+  const theirTerms = me === "buyer" ? draft.sellerTerms : draft.buyerTerms;
+  const mySig = sow?.signatures.find((s) => s.party === me);
+  const theirSig = sow?.signatures.find((s) => s.party === them);
+  const locked = !!draft.dealId;
+
+  /** PIN confirms it's you; the device key produces the signature over the agreement's fingerprint. */
+  async function sign(pin: string) {
+    if (!sow) return;
+    // Refuse to sign if what we were sent doesn't hash to what we're asked to sign.
+    if (sowHash(sow.sow) !== sow.sowHash) throw new Error("This agreement doesn't match its fingerprint. Not signing.");
+    const signature = await signHash(sow.sowHash);
+    await api.signSow(draftId, me, sow.version, signature, pin);
+    setAskPin(false);
+    const d = await api.getDraft(draftId);
+    if (d.dealId && me === "buyer") return router.push(`/txn/${d.dealId}/pay`);
+    await load();
+  }
 
   return (
     <>
-      <BackBar href="/home" title="Agree on the work" />
-      {!draft ? (
-        error ? <p className="p-6 text-center text-danger">{error}</p> : <Loading />
-      ) : (
-        <Screen className="pt-6">
-          <div className="flex flex-col items-center text-center">
-            <Avatar name={other} size="lg" />
-            <p className="mt-2 text-sm text-muted">{iAmBuyer ? `Paying ${other}` : `Requesting from ${other}`}</p>
-            <p className="text-4xl font-semibold">{fmtInr(draft.price)}</p>
-            <p className="mt-1 text-sm text-muted">{draft.purpose}</p>
-          </div>
+      <BackBar href="/home" title="Agreement" />
+      <Screen className="pt-6">
+        <div className="flex flex-col items-center text-center">
+          <Avatar name={other} size="lg" />
+          <p className="mt-3 text-sm text-muted">{me === "buyer" ? `You pay ${other}` : `${other} pays you`}</p>
+          <p className="num mt-1 text-4xl font-semibold">{fmtInr(draft.price)}</p>
+          <p className="mt-1 text-sm text-muted">{draft.purpose}</p>
+        </div>
 
-          <SectionTitle>What each side said</SectionTitle>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Card>
-              <p className="text-xs font-medium text-muted">You</p>
-              <p className="mt-1 whitespace-pre-wrap text-sm">{mine}</p>
-            </Card>
-            <Card>
-              <p className="text-xs font-medium text-muted">{other}</p>
-              <p className="mt-1 whitespace-pre-wrap text-sm">
-                {theirs ?? <span className="text-muted">Waiting for their reply…</span>}
-              </p>
-            </Card>
-          </div>
+        {/* 1. both sides of the story */}
+        <SectionTitle>What each side said</SectionTitle>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Card>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">You</p>
+            {myTerms ? (
+              <p className="mt-2 whitespace-pre-wrap text-sm">{myTerms}</p>
+            ) : (
+              <TermsInput
+                role={me}
+                busy={busy === "terms"}
+                onSubmit={(t) => run("terms", () => api.addTerms(draftId, me, t))}
+              />
+            )}
+          </Card>
+          <Card>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">{other}</p>
+            <p className="mt-2 whitespace-pre-wrap text-sm">
+              {theirTerms ?? <span className="text-muted">Waiting for {otherFirst} to add their terms…</span>}
+            </p>
+          </Card>
+        </div>
 
-          <SectionTitle>Agreement</SectionTitle>
-          {!sow ? (
-            <Card className="text-center">
-              <p className="text-sm text-muted">We&apos;ll combine both sides into one clear list of what gets delivered.</p>
-              <Button className="mt-4" onClick={prepare} disabled={!theirs || !!busy}>
-                {busy === "merge" ? "Preparing agreement…" : "Prepare agreement"}
-              </Button>
-            </Card>
-          ) : (
-            <>
-              {sow.conflicts.length > 0 && (
-                <div className="mb-3 rounded-2xl bg-warning/10 p-4 text-sm">
-                  <p className="font-medium text-warning">Where you differed</p>
-                  <ul className="mt-1 space-y-1">
-                    {sow.conflicts.map((c) => (
-                      <li key={c.field}>
-                        <b>{c.field}:</b> you said {c.buyer}, they said {c.seller}
-                        {c.note && <span className="text-muted"> — {c.note}</span>}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <Card>
-                <SowList sow={sow.sow} />
+        {/* 2. the agreement */}
+        {myTerms && theirTerms && (
+          <>
+            <SectionTitle>Agreement</SectionTitle>
+            {!sow ? (
+              <Card className="text-center">
+                <p className="text-sm text-muted">We&apos;ll turn both sides into one clear list of what gets delivered.</p>
+                <Button className="mt-4" onClick={() => run("merge", () => api.mergeSow(draftId))} disabled={!!busy}>
+                  {busy === "merge" ? "Preparing agreement…" : "Prepare agreement"}
+                </Button>
               </Card>
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row-reverse">
-                <Button size="lg" className="flex-1" onClick={agree} disabled={!!busy}>
-                  {busy === "agree" ? "Confirming…" : iAmBuyer ? `Agree & pay ${fmtInr(draft.price)}` : "Agree & send request"}
-                </Button>
-                <Button size="lg" variant="secondary" onClick={prepare} disabled={!!busy}>
-                  {busy === "merge" ? "Preparing…" : "Redo agreement"}
-                </Button>
-              </div>
-            </>
-          )}
-          {error && <p className="mt-4 text-sm text-danger">{error}</p>}
-        </Screen>
+            ) : (
+              <>
+                {sow.conflicts.map((c) => (
+                  <ConflictCard
+                    key={c.field}
+                    conflict={c}
+                    me={me}
+                    otherFirst={otherFirst}
+                    busy={busy === c.field}
+                    onPropose={(value) => run(c.field, () => api.proposeConflict(draftId, me, c.field, value))}
+                  />
+                ))}
+                <Card>
+                  <SowList sow={sow.sow} />
+                </Card>
+
+                {/* 3. signatures */}
+                <SectionTitle>Signatures</SectionTitle>
+                <Card flush className="divide-y divide-line/70">
+                  <SigRow name="You" signedAt={mySig?.signedAt} ok={verified[me]} />
+                  <SigRow name={other} signedAt={theirSig?.signedAt} ok={verified[them]} />
+                </Card>
+                <p className="mt-3 flex items-start gap-2 px-1 text-xs text-muted">
+                  <LockIcon className="mt-0.5 h-4 w-4 shrink-0" />
+                  Signing creates a digital signature from this device over the exact agreement above. Any later change to
+                  the agreement would break both signatures, so it can&apos;t be altered without you knowing.
+                </p>
+
+                <div className="mt-5">
+                  {locked ? (
+                    me === "buyer" ? (
+                      <ButtonLink size="lg" className="w-full" href={`/txn/${draft.dealId}/pay`}>
+                        Pay {fmtInr(draft.price)}
+                      </ButtonLink>
+                    ) : (
+                      <ButtonLink size="lg" className="w-full" href={`/txn/${draft.dealId}`}>
+                        View transaction
+                      </ButtonLink>
+                    )
+                  ) : mySig ? (
+                    <p className="rounded-2xl bg-accent-soft px-4 py-3 text-center text-sm font-medium text-accent">
+                      You&apos;ve signed. Waiting for {otherFirst} to sign.
+                    </p>
+                  ) : (
+                    <Button
+                      size="lg"
+                      className="w-full"
+                      disabled={!!busy || sow.conflicts.length > 0}
+                      onClick={() => setAskPin(true)}
+                    >
+                      <PenIcon className="h-5 w-5" />
+                      {sow.conflicts.length ? "Resolve the open points to sign" : "Agree & sign"}
+                    </Button>
+                  )}
+                </div>
+                {!locked && !mySig && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mx-auto mt-3 flex"
+                    onClick={() => run("merge", () => api.mergeSow(draftId))}
+                    disabled={!!busy}
+                  >
+                    {busy === "merge" ? "Preparing…" : "Redo agreement from both sides' terms"}
+                  </Button>
+                )}
+              </>
+            )}
+          </>
+        )}
+        {error && <p className="mt-4 text-center text-sm text-danger">{error}</p>}
+      </Screen>
+      {askPin && (
+        <PinSheet
+          title="Sign the agreement"
+          subtitle={`You're agreeing to ${fmtInr(draft.price)} for "${draft.purpose}" with ${other}`}
+          onSubmit={sign}
+          onClose={() => setAskPin(false)}
+        />
       )}
     </>
+  );
+}
+
+function TermsInput({ role, busy, onSubmit }: { role: Party; busy: boolean; onSubmit: (t: string) => void }) {
+  const [text, setText] = useState("");
+  return (
+    <div className="mt-2 space-y-3">
+      <textarea
+        rows={4}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        className={inputCls}
+        placeholder={
+          role === "seller"
+            ? "What you'll deliver, timeline, what's not included. e.g. Two pages, 8 days, printing not included."
+            : "What you need, deadline, must-haves. e.g. Print-ready, within 5 days, include our logo."
+        }
+      />
+      <Button className="w-full" disabled={busy || text.trim().length < 5} onClick={() => onSubmit(text.trim())}>
+        {busy ? "Saving…" : "Add my terms"}
+      </Button>
+    </div>
+  );
+}
+
+const toInput = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
+const fromInput = (s: string) => Math.floor(new Date(`${s}T00:00:00Z`).getTime() / 1000);
+
+function ConflictCard({
+  conflict: c,
+  me,
+  otherFirst,
+  busy,
+  onPropose,
+}: {
+  conflict: Conflict;
+  me: Party;
+  otherFirst: string;
+  busy: boolean;
+  onPropose: (v: number) => void;
+}) {
+  const them: Party = me === "buyer" ? "seller" : "buyer";
+  const myAsk = me === "buyer" ? c.buyerWants : c.sellerWants;
+  const theirAsk = me === "buyer" ? c.sellerWants : c.buyerWants;
+  const mine = c.proposals[me];
+  const theirs = c.proposals[them];
+  const [value, setValue] = useState(toInput(mine ?? theirs ?? myAsk));
+  const [today] = useState(() => toInput(Math.floor(Date.now() / 1000)));
+
+  return (
+    <Card className="mb-3 ring-warning/40">
+      <div className="flex items-center gap-2 text-warning">
+        <AlertIcon className="h-5 w-5" />
+        <p className="text-sm font-semibold">You disagree on the {c.label.toLowerCase()}</p>
+      </div>
+      <p className="mt-1 text-sm text-muted">
+        We won&apos;t pick a middle ground for you. Both of you need to enter the same date before the agreement can be
+        signed.
+      </p>
+
+      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div className="rounded-2xl bg-surface-2 p-3">
+          <dt className="text-xs text-muted">You asked for</dt>
+          <dd className="font-semibold">{fmtDate(myAsk)}</dd>
+        </div>
+        <div className="rounded-2xl bg-surface-2 p-3">
+          <dt className="text-xs text-muted">{otherFirst} asked for</dt>
+          <dd className="font-semibold">{fmtDate(theirAsk)}</dd>
+        </div>
+      </dl>
+
+      {theirs !== undefined && theirs !== mine && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-accent-soft p-3 text-sm">
+          <span>
+            {otherFirst} proposed <b>{fmtDate(theirs)}</b>
+          </span>
+          <Button size="sm" disabled={busy} onClick={() => onPropose(theirs)}>
+            Accept {fmtDate(theirs)}
+          </Button>
+        </div>
+      )}
+      {mine !== undefined && theirs !== mine && (
+        <p className="mt-3 text-sm text-muted">
+          You proposed <b className="text-foreground">{fmtDate(mine)}</b>. Waiting for {otherFirst} to accept or suggest another date.
+        </p>
+      )}
+
+      <div className="mt-4 flex gap-2">
+        <input
+          type="date"
+          value={value}
+          min={today}
+          onChange={(e) => setValue(e.target.value)}
+          className={cx(inputCls, "flex-1")}
+          aria-label={`Propose a ${c.label.toLowerCase()}`}
+        />
+        <Button variant="secondary" disabled={busy || !value} onClick={() => onPropose(fromInput(value))}>
+          {busy ? "Sending…" : mine === undefined ? "Propose" : "Change"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function SigRow({ name, signedAt, ok }: { name: string; signedAt?: number; ok?: boolean }) {
+  return (
+    <div className="flex items-center gap-3.5 px-5 py-4 sm:px-6">
+      <span
+        className={cx(
+          "grid h-10 w-10 shrink-0 place-items-center rounded-2xl",
+          signedAt ? "bg-success/10 text-success" : "bg-surface-2 text-muted",
+        )}
+      >
+        {signedAt ? <CheckIcon className="h-5 w-5" /> : <PenIcon className="h-5 w-5" />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] font-semibold">{name}</p>
+        <p className="text-[13px] text-muted">{signedAt ? `Signed ${fmtDateTime(signedAt)}` : "Not signed yet"}</p>
+      </div>
+      {signedAt && (
+        <span className={cx("text-xs font-semibold", ok === false ? "text-danger" : "text-success")}>
+          {ok === undefined ? "Checking…" : ok ? "Verified" : "Invalid"}
+        </span>
+      )}
+    </div>
   );
 }

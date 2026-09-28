@@ -1,6 +1,6 @@
 // API shapes used by the frontend.
-// PROVISIONAL: shapes follow docs/API.md on main plus FE additions (phone login, complaints, display
-// names) that the backend still has to agree to. Once `shared/` is imported, take Sow from there.
+// PROVISIONAL: shapes follow docs/API.md on main plus FE additions (phone login, device keys, complaints,
+// conflicts, signatures, display names) that the backend still has to agree to.
 import type { Address, Hex } from "viem";
 
 // ---- SOW (mirrors shared/src/sow.ts, version "sow/v1") ----
@@ -24,50 +24,76 @@ export type Sow = {
   deliverables: Deliverable[];
 };
 
-// ---- Users / KYC ----
-// Login is phone + OTP (SARAL MPC wallet under the hood). The account is bound to one device, like UPI.
+// ---- Users ----
+// Login is phone + OTP (SARAL MPC wallet under the hood). The account is bound to one device: the device
+// generates a signing key at login and registers its public address (`deviceKey`). Moving to a new device
+// also needs the security PIN, removes the old device, and starts a 24 h cooling period (lower limit).
 export type KycLevel = 0 | 1 | 2; // 1 = documents submitted, 2 = approved on-chain (setKyc)
+export type Role = "user" | "arbitrator";
 export type User = {
-  address: Address; // SARAL wallet; never shown to the user
+  address: Address; // account wallet; never shown to the user
   phone: string;
   name?: string;
+  role: Role;
   deviceId: string;
+  deviceKey?: Address; // public address of this device's signing key
   kycLevel: KycLevel;
+  hasPin: boolean; // security PIN set (asked on app open, new device, signing, releasing money)
+  deviceBoundAt?: number; // unix seconds this device was registered
+  coolingUntil?: number; // new-device cooling period end; payments capped until then
+  wallet?: Address; // linked external crypto wallet, if any
+};
+export type LoginResult =
+  | { status: "ok"; user: User }
+  | { status: "pin_required" }; // account is registered on another device
+/** What other people see when they look you up by phone or scan your QR. */
+export type Contact = {
+  phone: string;
+  name: string;
+  bankingName: string; // legal name from KYC, shown before paying (like GPay)
+  address: Address;
+  lastActivity?: number;
 };
 
 // ---- Drafts (off-chain negotiation, B2) ----
-export type DraftStatus = "awaiting_seller" | "ready_to_merge" | "merged" | "approved";
 export type Party = "buyer" | "seller";
-export type NewDraft = { role: Party; counterparty: string; purpose: string; price: string; terms: string };
+export type NewDraft = { role: Party; counterpartyPhone: string; purpose: string; price: string; terms: string };
+export type DraftStatus = "awaiting_other" | "ready_to_merge" | "merged" | "signed";
 export type Draft = {
   id: string;
-  initiator: Party; // who started it: the payer ("buyer") or the one requesting money ("seller")
+  initiator: Party; // the payer ("buyer") or the one requesting money ("seller")
   buyer: Address;
   seller: Address;
   buyerName: string;
   sellerName: string;
   purpose: string;
   price: string; // base units
-  buyerConstraints: string;
-  sellerPoints?: string;
+  buyerTerms?: string;
+  sellerTerms?: string;
   status: DraftStatus;
+  dealId?: string; // set once both have signed
   createdAt: number; // unix seconds
 };
+
+/** A point the two sides disagree on. The agreement can't be signed until both propose the same value. */
+export type Conflict = {
+  field: "deliveryDeadline";
+  label: string;
+  buyerWants: number; // unix seconds
+  sellerWants: number;
+  proposals: Partial<Record<Party, number>>;
+};
+export type Signature = { party: Party; signer: Address; signature: Hex; signedAt: number };
 export type SowVersion = {
   draftId: string;
   version: number;
   sow: Sow;
-  sowHash: Hex;
-  buyerApproved: boolean;
-  sellerApproved: boolean;
-  conflicts: { field: string; buyer: string; seller: string; note?: string }[];
+  sowHash: Hex; // keccak256 of the canonical SOW; what each party signs
+  conflicts: Conflict[];
+  signatures: Signature[];
 };
-export type ApproveSowResult =
-  | { bothApproved: false }
-  | { bothApproved: true; sowHash: Hex; amount: string; deliverBy: number; reviewPeriod: number };
 
 // ---- Deals (on-chain, B1) ----
-// Mirrors DealEscrow.Status on main, plus the legacy settled names the mocks still use.
 export type DealStatus =
   | "Proposed"
   | "Accepted"
@@ -105,38 +131,28 @@ export type Deal = {
   deliverBy: number;
   reviewPeriod: number;
   deliveredAt?: number;
-  deliveryHash?: Hex;
-  evidenceHash?: Hex;
+  deliveryNote?: string;
   buyerBps?: number;
-  reasoningHash?: Hex;
+  accepted?: Partial<Record<Party, boolean>>; // who accepted the proposed resolution
+  ruledBy?: "ai" | "arbitrator";
+  arbitratorNote?: string;
+  paidWith?: PayMethod;
   events: ChainEvent[];
 };
 
 // ---- Payments (PG) ----
+export type PayMethod = "upi_qr" | "upi_id" | "upi_app" | "crypto";
 export type OnrampSession = { paymentId: string; amountInr: string; amountUsd: string; upiUri: string };
-export type OnrampConfirm = { mintTx: Hex; fundTx: Hex };
-export type PaymentInfo = {
-  status: "created" | "paid" | "minted" | "funded" | "failed";
-  mintTx?: Hex;
-  fundTx?: Hex;
-  payout?: { toBuyer: string; toSeller: string; finalStatus: DealStatus; txHash: Hex };
-};
 
 // ---- Complaints / disputes (B1 + B2) ----
 export type Attachment = { name: string; type: string; size: number; url?: string };
 export type Complaint = {
   dealId: string;
+  raisedBy: Party;
   text: string;
   deliverableIds: string[];
   attachments: Attachment[];
   createdAt: number;
 };
 export type DeliverableScore = { id: string; fulfilledPct: number; rationale: string; evidenceRefs: string[] };
-export type Resolution = { scores: DeliverableScore[]; buyerBps: number; reasoningHash: Hex; txHash?: Hex };
-export type VerifyResult = {
-  reasoning: Record<string, unknown>;
-  recomputedBuyerBps: number;
-  recomputedHash: Hex;
-  onchainReasoningHash: Hex;
-  match: boolean;
-};
+export type Resolution = { scores: DeliverableScore[]; buyerBps: number };
