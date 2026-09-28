@@ -1,0 +1,1 @@
+Read `AGENTS.md` at the repo root before any task. It contains the project context, file ownership, MST chain facts, non-negotiable rules and the progress-logging protocol. Key rules: never touch secrets; never invent SARAL/WASMify APIs; the split formula lives only in `shared/split.ts`; after each task, log it at the top of your role's file in `docs/progress/`.

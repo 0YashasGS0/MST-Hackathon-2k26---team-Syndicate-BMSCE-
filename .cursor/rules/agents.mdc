@@ -1,0 +1,5 @@
+---
+description: Shared team context for all agents
+alwaysApply: true
+---
+Read `AGENTS.md` at the repo root before any task and follow its session protocol. After each task, log it at the top of your role's file in `docs/progress/`.

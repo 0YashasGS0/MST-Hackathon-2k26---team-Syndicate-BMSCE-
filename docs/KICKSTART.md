@@ -35,14 +35,15 @@ An **AI-mediated escrow payment gateway on MST Blockchain**, built by Team Kerne
 | `docs/MST_Services.pdf` | ✅ The 10 MST services: priority, owner, fallback |
 | `AGENTS.md`, `docs/STATUS.md`, `docs/progress/*` | ✅ Shared agent rules, team checkpoints, per-role logs |
 | `.env.example`, `.gitignore`, `deployments.md` | ✅ Templates. **Nothing is deployed yet.** |
-| `backend/`, `frontend/`, `shared/` | ⬜ Not started |
+| `shared/src/sow.ts`, `shared/src/hash.ts` | ✅ B2 step 1 done (branch `yashas`, commit `a3f6392`): SOW zod schema `sow/v1` + `hashSow()`; 9 tests pass |
+| `backend/`, `frontend/` | ⬜ Not started |
 
 ## Stack
 
 - **Contracts:** Foundry, Solidity 0.8.24, OpenZeppelin v5
 - **Backend:** Node, Express, TypeScript, SQLite, viem
 - **Frontend:** Next.js, Tailwind, viem
-- **Shared code** (`shared/`): `hash.ts` (RFC 8785 canonical JSON → keccak256) and `split.ts` / `split.wasm` (the split formula)
+- **Shared code** (`shared/`): `src/sow.ts` (SOW schema), `src/hash.ts` (`hashSow`: RFC 8785 canonical JSON → keccak256), and later `split.ts` / `split.wasm` (the split formula)
 - **AI:** an LLM API called only from the backend, with tool-forced JSON output, temperature 0, and a versioned prompt
 
 ## MST facts
@@ -87,7 +88,7 @@ An **AI-mediated escrow payment gateway on MST Blockchain**, built by Team Kerne
 
 ## First actions for any agent
 
-1. `git pull --rebase origin main`
+1. `git pull --rebase origin main`, then switch to your personal branch (never push to `main`)
 2. Ask your user which role they are (B1, B2, PG or FE).
 3. Read `AGENTS.md` → `docs/STATUS.md` → all of `docs/progress/` → your section of `docs/TEAM_ROADMAP.md`.
 4. Report any requests addressed to your role, then continue from your next unfinished step.
