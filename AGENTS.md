@@ -29,7 +29,8 @@ Required reading, in order: `docs/MVP.md` (design) → `docs/TEAM_ROADMAP.md` (w
 ## 3. MST Blockchain facts
 
 - EVM-compatible L1 with Proof of Staked Authority consensus. Standard Solidity/viem/Foundry tooling works unchanged.
-- Testnet chain ID `91562037`, RPC `https://testnetrpc.mstblockchain.com`, WebSocket `wss://testnetrpc.mstblockchain.com`, gas token MSTC (18 decimals), ~3 s blocks.
+- Testnet chain ID `91562037`, RPC `https://testnetrpc.mstblockchain.com`, WebSocket `wss://testnetrpc.mstblockchain.com`, gas token tMSTC (18 decimals), ~3 s blocks.
+- Gas token: tMSTC on testnet, MSTC on mainnet (18 decimals)
 - Stablecoin: `MockUSD` (6 decimals). Could be swapped for MST's tMUSD later.
 - MST SDKs: **SARAL** (MPC keyless login) and **WASMify** (ZK-backed verifiable execution). **Neither is publicly documented. Never invent their APIs.** Use only what is in `docs/sdk/` or the mentor-provided docs. If those are missing, stop and ask your user.
 - Deployed addresses: **only** from `deployments.md`. Never hardcode an address from memory.

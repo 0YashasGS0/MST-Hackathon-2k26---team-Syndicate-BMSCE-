@@ -48,9 +48,9 @@ An **AI-mediated escrow payment gateway on MST Blockchain**, built by Team Kerne
 
 ## MST facts
 
-- EVM-compatible Layer 1 using Proof of Staked Authority. Testnet chain ID `91562037`, RPC `https://testnetrpc.mstblockchain.com` (WebSocket `wss://…`), gas token MSTC, ~3-second blocks. Explorer: `https://testnet.mstscan.com` (official). Official MST docs: `docs/sdk/`.
+- EVM-compatible Layer 1 using Proof of Staked Authority. Testnet chain ID `91562037`, RPC `https://testnetrpc.mstblockchain.com` (WebSocket `wss://…`), gas token tMSTC, ~3-second blocks. Explorer: `https://testnet.mstscan.com` (official). Official MST docs: `docs/sdk/`.
 - **MST services we use:**
-  - **Core:** the testnet, our contracts, MSTC gas, the RPC/WebSocket endpoints, the explorer, and the stablecoin (MockUSD, or tMUSD if we get access)
+  - **Core:** the testnet, our contracts, tMSTC gas, the RPC/WebSocket endpoints, the explorer, and the stablecoin (MockUSD, or tMUSD if we get access)
   - **Should:** SARAL (MPC keyless login)
   - **Stretch:** WASMify (verifiable execution of the split formula)
   - **Optional:** BridgeKey
@@ -97,5 +97,5 @@ An **AI-mediated escrow payment gateway on MST Blockchain**, built by Team Kerne
 
 - SARAL SDK access, and whether it supports gasless transactions
 - WASMify SDK access
-- A testnet faucet or MSTC for 5 wallets
+- A testnet faucet or tMSTC for 5 wallets
 - Minting access to tMUSD

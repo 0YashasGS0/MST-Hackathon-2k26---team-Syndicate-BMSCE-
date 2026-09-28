@@ -230,8 +230,8 @@ This gives you:
 
 ### 8.1 MST testnet + EVM contracts (core — must have)
 
-1. Add the MST testnet to MetaMask: RPC `https://testnetrpc.mstblockchain.com`, chain ID `91562037`, symbol MSTC.
-2. Get testnet MSTC from the organizers or a faucet for **three wallets**: deployer/ORG, agent, and arbitrator.
+1. Add the MST testnet to MetaMask: RPC `https://testnetrpc.mstblockchain.com`, chain ID `91562037`, symbol tMSTC, explorer `https://testnet.mstscan.com` (official; its **Add MST Testnet** button does this for you).
+2. Get testnet tMSTC from the organizers or a faucet for **three wallets**: deployer/ORG, agent, and arbitrator.
 3. Set up and deploy:
    ```bash
    cd contracts
@@ -248,7 +248,7 @@ This gives you:
 - **Where:** step 1, login. The notebook asks for login through an authenticated device; SARAL's MPC key share lives on the user's device, so this maps directly.
 - **How:** get the SDK from MST mentors at kickoff. Wire the SARAL login, read the user's wallet address, and send contract transactions through the SARAL signer.
 - **Also:** SARAL verifies the user's mobile number. Treat that as a first-level KYC signal before the mock document upload.
-- **Gas:** new SARAL wallets have 0 MSTC. Either the backend sends a small amount from a team wallet after KYC approval, or you use sponsored transactions if SARAL supports them (ask the mentors).
+- **Gas:** new SARAL wallets have 0 tMSTC. Either the backend sends a small amount from a team wallet after KYC approval, or you use sponsored transactions if SARAL supports them (ask the mentors).
 - **Fallback:** MetaMask login, with SARAL shown as work in progress in the pitch.
 
 ### 8.3 WASMify — verifiable dispute computation (stretch, high impact)
@@ -394,6 +394,5 @@ This gives you:
 
 1. SARAL SDK access and docs; does it support sponsored (gasless) transactions?
 2. WASMify SDK access; can it attest a pure WASM function's output on-chain?
-3. Testnet faucet, or testnet MSTC for our 3 system wallets + demo users.
-4. Testnet explorer URL (mstscan is mainnet).
-5. Minting access to tMUSD, or should we deploy our own mock stablecoin?
+3. Testnet faucet, or testnet tMSTC for our 3 system wallets + demo users.
+4. Minting access to tMUSD, or should we deploy our own mock stablecoin?
