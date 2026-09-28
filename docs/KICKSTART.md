@@ -88,10 +88,10 @@ An **AI-mediated escrow payment gateway on MST Blockchain**, built by Team Kerne
 
 ## First actions for any agent
 
-1. `git pull --rebase origin main`, then switch to your personal branch (never push to `main`)
+1. Work on your own branch only. Don't sync with main or read others' logs during the build; everyone merges into main once at the end. Build strictly against docs/API.md so branches integrate cleanly. (never push to `main`)
 2. Ask your user which role they are (B1, B2, PG or FE).
-3. Read `AGENTS.md` → `docs/STATUS.md` → all of `docs/progress/` → your section of `docs/TEAM_ROADMAP.md`.
-4. Report any requests addressed to your role, then continue from your next unfinished step.
+3. Read `AGENTS.md` → `docs/API.md` → your section of `docs/TEAM_ROADMAP.md` → your own `docs/progress/<role>.md`.
+4. Continue from your next unfinished step. After each task, update your own progress log.
 
 ## Open questions (waiting on MST mentors)
 
