@@ -85,4 +85,9 @@ type Deal = {
 };
 
 type DisputeScores = { scores: { id: string; fulfilledPct: number; rationale: string; evidenceRefs: string[] }[] }; // integers 0..100
+
+// reasoningHash = hashJson(Reasoning) (shared/src/hash.ts: RFC 8785 → keccak256). Stored in dispute_rulings; /verify recomputes it.
+// buyerBps = computeBuyerBps(sow.deliverables, scores) (shared/src/split.ts). Scores are in SOW deliverable order; hashes lowercase.
+type Reasoning = { dealId: number; sowHash: string; deliveryHash: string; evidenceHash: string;
+  scores: DisputeScores["scores"]; buyerBps: number; model: string; promptVersion: string };
 ```
