@@ -20,6 +20,9 @@ Newest entries first. Updated by teammates and Claude Code after every task.
 
 ## Log
 
+### 2026-09-28 (B2)
+- `shared/`: SOW schema (draft sow/v1) + `hashSow` (RFC 8785 → keccak256), tests passing. Details: `docs/progress/B2.md`
+
 ### Pre-kickoff
 - README.md team briefing added
 - CLAUDE.md added for Claude Code context
