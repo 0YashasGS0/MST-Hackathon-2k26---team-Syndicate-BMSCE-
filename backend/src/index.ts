@@ -12,7 +12,19 @@ const app = express();
 app.use(cors()); // tighten origin: to the real frontend URL before the demo
 app.use(express.json());
 
-app.get("/health", (_req, res) => res.json({ status: "ok" }));
+import { pub, org, agent, arbitrator } from "./chain";
+import { db } from "./db";
+
+app.get("/health", async (_req, res) => {
+  try {
+    const chainId = await pub.getChainId();
+    const block = await pub.getBlockNumber();
+    const dbOk = db.prepare("SELECT 1").get();
+    res.json({ status: "ok", chainId: Number(chainId), latestBlock: Number(block), dbOk: !!dbOk, wallets: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "health check failed", message: err.message });
+  }
+});
 
 app.use(kycRouter);
 app.use(dealsRouter);
