@@ -7,8 +7,10 @@
 ## Auth & KYC
 | Method | Path | Owner | Body → Response |
 |---|---|---|---|
-| POST | `/auth/saral` | PG | `{ address, saralSessionProof }` → `User` |
-| POST | `/auth/wallet` | PG | `{ address, signature, message }` → `User` (MetaMask fallback) |
+| GET | `/auth/nonce?address=0x..` | PG | → `{ nonce, chainId, domain, issuedAt, expirationTime, messageToSign }` (single-use nonce; expires in 5 minutes) |
+| POST | `/auth/verify` | PG | `{ message, signature }` → `{ user, expiresIn }` plus HttpOnly `mst_session` cookie |
+| POST | `/auth/logout` | PG | — → `204` and clears the session cookie |
+| POST | `/auth/saral` | PG | `{ address, saralSessionProof }` → `503` until mentor docs and a docs-backed verifier are available |
 | POST | `/kyc/submit` | B1 | multipart `file` → `User` |
 | POST | `/admin/kyc/:address/approve` | B1 | header `x-admin-token` → `{ txHash }` |
 
@@ -36,13 +38,31 @@
 ## Payments
 | Method | Path | Owner | Body → Response |
 |---|---|---|---|
-| POST | `/onramp/:dealId/session` | PG | — → `{ paymentId, amountInr, amountUsd, status }` |
-| POST | `/onramp/:dealId/confirm` | PG | — → `{ status, mintTx, fundTx }` (idempotent) |
-| GET | `/deals/:id/payment` | PG | → `{ payment, payout? }` |
+| POST | `/onramp/:dealId/session` | PG | — → `{ paymentId, amountInr, amountUsd, status, upi: { payee, note } }` |
+| POST | `/onramp/:dealId/confirm` | PG | — → `{ status, mintTx, fundTx }` (idempotent; mint/fund hashes may be `null` until submitted) |
+| GET | `/deals/:id/payment` | PG | → `{ payment: Payment|null, payout: Payout|null }` |
+
+### PG payment details
+- `amountUsd`, `payment.amount`, `payout.toBuyer`, and `payout.toSeller` are decimal integer strings in MockUSD base units (6 decimals), unless the field name ends in `Formatted`.
+- The demo quote is fixed at ₹84 per 1 MockUSD. The on-ramp session amount is sourced from the on-chain deal; clients do not submit an amount.
+- The UPI payee/note are mock display data only. `/confirm` represents the demo user's confirmation; it is not proof of an external fiat transfer.
+- PG payment routes use the shared backend `X-API-Key` middleware. Wallet auth endpoints are public. Wallet login first obtains a server-stored, single-use 5-minute nonce, then signs the returned EIP-4361-style message for chain `91562037`. `/auth/verify` checks the configured `AUTH_DOMAIN`, exact URI, chain, nonce, issue/expiry times, and signature before setting a one-hour `HttpOnly; SameSite=Lax` session cookie (`Secure` in production). Configure `AUTH_SESSION_SECRET` to at least 32 bytes and `AUTH_DOMAIN`; `AUTH_URI` can override the default `https://${AUTH_DOMAIN}`.
+- `getCaller(req)` returns only the address in a valid signed session cookie. `x-user-address` is ignored unless `AUTH_DEV_HEADER=true`; keep that disabled outside local tests. The demo API key remains application-level access control, not a per-user session token.
+- SARAL is fail-closed. `SARAL_ENABLED` defaults to `false`; the route and connector return `SARAL not configured: awaiting mentor docs` until mentor docs arrive. No SARAL SDK calls, package names or proof formats are assumed. If those docs provide an EIP-1193 provider, it can use the injected-wallet flow; a session-proof flow needs a separately documented verifier.
+- `GET /deals/:id/payment` reads settlement amounts indexed by B1 from `Settled` events; both payout amount fields are formatted using 6 MockUSD decimals.
 
 ## Shapes
 ```ts
 type User = { address: string; handle?: string; kycLevel: 0 | 1 | 2 };
+
+type Payment = {
+  id: string; dealId: number; amount: string; status: "created"|"paid"|"minted"|"funded"|"failed";
+  mintTx: string|null; fundTx: string|null; createdAt: string; amountFormatted: string;
+};
+type Payout = {
+  dealId: number; toBuyer: string; toSeller: string; finalStatus: string; txHash: string;
+  toBuyerFormatted: string; toSellerFormatted: string;
+};
 
 // Authoritative: shared/src/sow.ts (zod, "sow/v1"). Mirrored here for reference.
 type SOW = {
