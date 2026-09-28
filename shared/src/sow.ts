@@ -8,8 +8,8 @@ export const TOTAL_BPS = 10_000;
 
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "must be a 0x-prefixed 20-byte address");
 // Token amounts are base-unit integer strings (MockUSD = 6 decimals) — never JS floats,
-// so canonical JSON and on-chain uint256 always agree.
-const baseUnits = z.string().regex(/^(0|[1-9][0-9]*)$/, "must be a non-negative integer string");
+// so canonical JSON and on-chain uint256 always agree. Must be > 0: proposeDeal reverts on zero.
+const baseUnits = z.string().regex(/^[1-9][0-9]*$/, "must be a positive integer string");
 
 export const DeliverableSchema = z.object({
   id: z.string().min(1).max(32),
@@ -30,6 +30,7 @@ export const SowSchema = z
     deliveryDeadline: z.number().int().positive(), // unix seconds
     reviewWindowSecs: z.number().int().positive(),
     deliverables: z.array(DeliverableSchema).min(1).max(20),
+    exclusions: z.array(z.string().min(1).max(500)).max(20), // required; [] allowed
   })
   .strict()
   .superRefine((sow, ctx) => {

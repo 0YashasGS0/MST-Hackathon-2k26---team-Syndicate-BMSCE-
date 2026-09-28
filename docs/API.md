@@ -51,10 +51,11 @@ type SOW = {
   buyer: string;            // 0x address
   seller: string;           // 0x address, != buyer
   token: string;            // stablecoin address (MockUSD)
-  amount: string;           // base-unit integer string, e.g. "100000000" = 100 mUSD; must equal proposeDeal amount
+  amount: string;           // base-unit integer string, must be > 0 (proposeDeal reverts on 0), e.g. "100000000" = 100 mUSD; must equal proposeDeal amount
   deliveryDeadline: number; // unix seconds; must equal proposeDeal deliverBy and be in the future at proposal
   reviewWindowSecs: number; // must equal proposeDeal reviewPeriod
   deliverables: { id: string; title: string; description: string; acceptanceCriteria: string[]; weightBps: number }[]; // Σ = 10000
+  exclusions: string[];     // required, out-of-scope items (max 20, each 1–500 chars); [] allowed
 };
 
 type Draft = { id: string; buyer: string; seller: string; purpose: string; price: string;

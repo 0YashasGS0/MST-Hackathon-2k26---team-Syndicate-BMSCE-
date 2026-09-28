@@ -4,11 +4,19 @@ import canonicalize from "canonicalize";
 import { keccak256, toBytes, type Hex } from "viem";
 import { parseSow, type Sow } from "./sow";
 
+/** Generic RFC 8785 canonical JSON → keccak256 (e.g. reasoningHash). No schema, no normalization. */
+export function hashJson(obj: unknown): Hex {
+  return keccak256(toBytes(canonicalJson(obj)));
+}
+
 /** Canonical JSON string (RFC 8785 / JCS) of a validated SOW. Addresses are lowercased first. */
 export function canonicalSow(input: unknown): string {
-  const sow = normalize(parseSow(input));
-  const json = canonicalize(sow);
-  if (json === undefined) throw new Error("SOW is not canonicalizable");
+  return canonicalJson(normalize(parseSow(input)));
+}
+
+function canonicalJson(obj: unknown): string {
+  const json = canonicalize(obj);
+  if (json === undefined) throw new Error("value is not canonicalizable");
   return json;
 }
 

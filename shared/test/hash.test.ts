@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { keccak256, toBytes } from "viem";
-import { canonicalSow, hashSow, parseSow, type Sow } from "../src";
+import { canonicalSow, hashJson, hashSow, parseSow, type Sow } from "../src";
 
 const base: Sow = {
   version: "sow/v1",
@@ -15,6 +15,7 @@ const base: Sow = {
     { id: "d1", title: "Design", description: "Figma mock", acceptanceCriteria: ["3 screens"], weightBps: 4000 },
     { id: "d2", title: "Build", description: "Next.js site", acceptanceCriteria: ["deployed", "mobile ok"], weightBps: 6000 },
   ],
+  exclusions: ["hosting costs"],
 };
 
 describe("hashSow", () => {
@@ -49,7 +50,30 @@ describe("hashSow", () => {
   });
 });
 
+describe("hashJson", () => {
+  it("is stable under key reordering (including nested objects)", () => {
+    const a = { dealId: 7, scores: [{ id: "d1", fulfilledPct: 50 }], meta: { model: "m", promptVersion: "p1" } };
+    const b = { meta: { promptVersion: "p1", model: "m" }, scores: [{ fulfilledPct: 50, id: "d1" }], dealId: 7 };
+    expect(hashJson(b)).toBe(hashJson(a));
+    expect(hashJson(a)).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(hashJson({ ...a, dealId: 8 })).not.toBe(hashJson(a));
+  });
+});
+
 describe("SowSchema", () => {
+  it("rejects amount \"0\"", () => {
+    expect(() => parseSow({ ...base, amount: "0" })).toThrow();
+  });
+
+  it("requires the exclusions field", () => {
+    const { exclusions: _omit, ...noExclusions } = base;
+    expect(() => parseSow(noExclusions)).toThrow();
+  });
+
+  it("accepts exclusions: []", () => {
+    expect(parseSow({ ...base, exclusions: [] }).exclusions).toEqual([]);
+  });
+
   it("rejects weights that do not sum to 10000", () => {
     const bad = structuredClone(base);
     bad.deliverables[1].weightBps = 5999;
