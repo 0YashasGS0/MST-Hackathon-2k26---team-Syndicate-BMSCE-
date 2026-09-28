@@ -5,7 +5,8 @@
 // Filters: EVAL_SCENARIOS=A,D (default: all), EVAL_RUNS=3.
 import "./_env";
 import { createLlmChain } from "../src/agent/createLlmClient";
-import { DEFAULT_RELATIVE_CHECKS, formatDetails, formatRow, formatSummary, runEval } from "../src/agent/evalDisputes";
+import { DEFAULT_RELATIVE_CHECKS, formatCalls, formatDetails, formatRow, formatSummary, runEval } from "../src/agent/evalDisputes";
+import { labelOf } from "../src/agent/llm";
 import { loadScenarios } from "../src/agent/scenarios";
 import { DISPUTE_PROMPTS } from "../src/agent/scoreDispute";
 
@@ -45,7 +46,8 @@ for (const c of DEFAULT_RELATIVE_CHECKS) {
   }
 }
 for (const s of scenarios) console.log(`scenario ${s.id} (${s.name}): ground truth ${s.expectedBps} bps → range ${s.expectedBuyerBps.min}–${s.expectedBuyerBps.max}`);
-console.log(`provider: ${llm[0].provider}   models: ${llm.map((c) => c.model).join(" → ")}   prompt: ${promptVersion}   runs: ${runs}   delay: ${delayMs} ms`);
+console.log(`chain: ${llm.map(labelOf).join(" → ")}   prompt: ${promptVersion}   runs: ${runs}   delay: ${delayMs} ms`);
+for (const c of llm) console.log(`  ${labelOf(c).padEnd(40)} mode=${c.toolMode}`);
 console.log(["sc ", "run", "scores".padEnd(28), "bps".padStart(6), "in range?".padEnd(20), "model".padEnd(24), "latency"].join(" | "));
 
 const { summary } = await runEval({
@@ -56,6 +58,8 @@ const { summary } = await runEval({
   delayMs,
   onRow: (r) => {
     console.log(formatRow(r, byId.get(r.scenario)!));
+    for (const line of formatCalls(r)) console.log(line);
+    console.log(`      answered by: ${r.model}`);
     for (const line of formatDetails(r, byId.get(r.scenario)!)) console.log(line);
   },
   onWait: (ms, reason) => console.log(`    (waiting ${ms} ms: ${reason})`),

@@ -12,6 +12,7 @@ const NO_FORCED_TOOL = /^claude-(opus-5-5|fable-5-1|mythos-5-1)/;
 
 export class AnthropicLlmClient implements LlmClient {
   readonly provider = "anthropic";
+  id?: string; // "anthropic:<model>" when built from LLM_CHAIN
   readonly toolMode: string;
   private readonly messages: AnthropicMessagesApi;
   lastCall?: LlmCallInfo;

@@ -54,6 +54,7 @@ export type AgentCall = {
   statusCode?: number | null;
   transient?: boolean;
   retryDelayMs?: number;
+  toolMode?: string;
 };
 
 const SCHEMA = `
@@ -103,6 +104,7 @@ CREATE TABLE IF NOT EXISTS agent_calls (
   status_code    INTEGER,
   transient      INTEGER NOT NULL DEFAULT 0,
   retry_delay_ms INTEGER,
+  tool_mode      TEXT,
   created_at     INTEGER NOT NULL
 );
 
@@ -166,6 +168,7 @@ export class SowStore {
       ["status_code", "INTEGER"],
       ["transient", "INTEGER NOT NULL DEFAULT 0"],
       ["retry_delay_ms", "INTEGER"],
+      ["tool_mode", "TEXT"],
     ];
     for (const [name, type] of added) if (!cols.has(name)) this.db.exec(`ALTER TABLE agent_calls ADD COLUMN ${name} ${type}`);
   }
@@ -277,8 +280,8 @@ export class SowStore {
   logAgentCall(call: AgentCall, now: number): void {
     this.db
       .prepare(
-        `INSERT INTO agent_calls (subject, kind, attempt, provider, model, prompt_version, request_json, response_json, error, status_code, transient, retry_delay_ms, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO agent_calls (subject, kind, attempt, provider, model, prompt_version, request_json, response_json, error, status_code, transient, retry_delay_ms, tool_mode, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         call.subject,
@@ -293,6 +296,7 @@ export class SowStore {
         call.statusCode ?? null,
         call.transient ? 1 : 0,
         call.retryDelayMs ?? null,
+        call.toolMode ?? null,
         now,
       );
   }

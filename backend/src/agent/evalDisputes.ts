@@ -22,6 +22,8 @@ export type EvalRow = {
   scores: RulingScore[]; // v1/v2: pct + rationale; v3: pct (computed) + per-criterion verdicts
   /** Non-transient attempts that failed validation: which model, and its errors (for INVALID diagnostics). */
   attempts: { attempt: number; model: string; error: string }[];
+  /** Every LLM request of this run, in order (provider:model, HTTP status, tool mode, outcome). */
+  calls: { attempt: number; model: string; status: number | null; toolMode: string | null; transient: boolean; ok: boolean }[];
   /** The last raw tool output (for printing verdicts of INVALID runs). */
   lastRaw?: unknown;
   /** v3: criteria whose verdict (and counts, for partial) equal groundTruth; null for v1/v2 or no ruling. */
@@ -105,6 +107,7 @@ export async function runEval(opts: EvalOptions): Promise<{ rows: EvalRow[]; sum
           status: inRange ? "ok" : "fail",
           scores: r.scores,
           attempts: [],
+          calls: [],
           agreement: agreementWith(r.scores, sc.groundTruth),
           buyerBps: r.buyerBps,
           inRange,
@@ -118,6 +121,7 @@ export async function runEval(opts: EvalOptions): Promise<{ rows: EvalRow[]; sum
           status: err instanceof AgentValidationError ? "fail" : "error",
           scores: [],
           attempts: [],
+          calls: [],
           agreement: null,
           buyerBps: null,
           inRange: false,
@@ -127,9 +131,18 @@ export async function runEval(opts: EvalOptions): Promise<{ rows: EvalRow[]; sum
         };
       }
       // Diagnostics from this run's audit rows: each failed validation attempt (model + errors), and the last raw output.
-      const logged = store.db
-        .prepare("SELECT attempt, model, error, response_json FROM agent_calls WHERE id > ? AND transient = 0 ORDER BY id")
-        .all(lastLogId) as { attempt: number; model: string; error: string | null; response_json: string | null }[];
+      const all = store.db
+        .prepare("SELECT attempt, model, error, response_json, status_code, tool_mode, transient FROM agent_calls WHERE id > ? ORDER BY id")
+        .all(lastLogId) as { attempt: number; model: string; error: string | null; response_json: string | null; status_code: number | null; tool_mode: string | null; transient: number }[];
+      row.calls = all.map((l) => ({
+        attempt: l.attempt,
+        model: l.model,
+        status: l.status_code ?? (l.transient ? null : 200),
+        toolMode: l.tool_mode,
+        transient: l.transient === 1,
+        ok: !l.error,
+      }));
+      const logged = all.filter((l) => l.transient === 0);
       row.attempts = logged.filter((l) => l.error).map((l) => ({ attempt: l.attempt, model: l.model, error: l.error! }));
       const lastResponse = [...logged].reverse().find((l) => l.response_json);
       if (lastResponse) row.lastRaw = JSON.parse(lastResponse.response_json!);
@@ -271,6 +284,13 @@ export function formatDetails(r: EvalRow, sc: Scenario): string[] {
   }
   if (r.scores.some(hasCriteria)) return verdictLines(r.scores, sc);
   return r.scores.map((s) => `      ${s.id} (${s.fulfilledPct}): ${clip(hasCriteria(s) ? "" : s.rationale, 160)}`);
+}
+
+/** One line per LLM request of the run: provider:model, status, tool mode, outcome. */
+export function formatCalls(r: EvalRow): string[] {
+  return r.calls.map(
+    (c) => `      · attempt ${c.attempt} ${c.model} status=${c.status ?? "network error"}${c.transient ? " (transient)" : ""} mode=${c.toolMode ?? "-"} ${c.ok ? "ok" : "failed"}`,
+  );
 }
 
 export function formatSummary(s: EvalSummary): string[] {

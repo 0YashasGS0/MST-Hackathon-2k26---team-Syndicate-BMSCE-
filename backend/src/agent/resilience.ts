@@ -3,7 +3,7 @@
 //  - 429 (rate limit): never retry the same model. Put it on cooldown for its retryDelay and move straight to the
 //    next model; cooled-down models are skipped on later calls. If every model is cooling, wait once for the
 //    earliest (≤ LLM_MAX_COOLDOWN_WAIT_MS, default 65 s) and retry it, otherwise fail fast.
-import type { LlmClient, ToolCallRequest } from "./llm";
+import { labelOf, type LlmClient, type ToolCallRequest } from "./llm";
 
 export type BackoffOptions = {
   attemptsPerModel?: number; // default 3
@@ -58,10 +58,24 @@ export class AllModelsRateLimitedError extends Error {
   }
 }
 
-/** Gemini's RetryInfo (`"retryDelay": "23s"`) from an error message, in ms. */
+/**
+ * Retry delay from an error message, in ms: Gemini's RetryInfo (`"retryDelay": "23s"`) or Groq/OpenAI-style
+ * "Please try again in 7.66s" / "in 1m2.5s" / "in 450ms".
+ */
 export function retryDelayMsFrom(message: string): number | null {
-  const m = message.match(/"?retryDelay"?\s*[:=]\s*"?(\d+(?:\.\d+)?)s"?/);
-  return m ? Math.round(Number(m[1]) * 1000) : null;
+  const g = message.match(/"?retryDelay"?\s*[:=]\s*"?(\d+(?:\.\d+)?)s"?/);
+  if (g) return Math.round(Number(g[1]) * 1000);
+  const o = message.match(/try again in\s+(?:(\d+)m)?(\d+(?:\.\d+)?)(ms|s)\b/i);
+  if (o) return Math.round((Number(o[1] ?? 0) * 60 + Number(o[2]) / (o[3] === "ms" ? 1000 : 1)) * 1000);
+  return null;
+}
+
+/** Retry delay of a 429: the `retry-after` header (seconds), else the message. */
+export function retryDelayOf(err: unknown): number | null {
+  const h = (err as { headers?: { get?: (k: string) => string | null } } | null)?.headers;
+  const ra = typeof h?.get === "function" ? h.get("retry-after") : null;
+  if (ra && /^\d+(\.\d+)?$/.test(ra.trim())) return Math.round(Number(ra) * 1000);
+  return retryDelayMsFrom(err instanceof Error ? err.message : String(err));
 }
 
 /** Every model in the chain failed with transient errors (or the sleep budget ran out). */
@@ -133,7 +147,7 @@ export async function callWithFallback(
   /** One model: 500/503/network → backoff retries; 429 → cooldown, give up on this model immediately. */
   async function tryModel(client: LlmClient): Promise<{ raw: unknown } | null> {
     const statuses: (number | null)[] = [];
-    failures.push({ model: client.model, statuses });
+    failures.push({ model: labelOf(client), statuses });
     for (let t = 1; t <= attempts; t++) {
       try {
         return { raw: await client.callTool(req) };
@@ -143,7 +157,7 @@ export async function callWithFallback(
         const error = err instanceof Error ? err.message : String(err);
         statuses.push(statusCode);
         if (statusCode === 429) {
-          const retryDelayMs = retryDelayMsFrom(error) ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS;
+          const retryDelayMs = retryDelayOf(err) ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS;
           cooldowns.set(client, now() + retryDelayMs);
           onTransient?.({ client, try: t, statusCode, error, retryDelayMs });
           return null; // never retry a rate-limited model; the next one gets its turn
@@ -167,7 +181,7 @@ export async function callWithFallback(
 
   for (const client of chain) {
     if (coolingIn(client) > 0) {
-      failures.push({ model: client.model, statuses: [] }); // rate-limited recently: skip without a request
+      failures.push({ model: labelOf(client), statuses: [] }); // rate-limited recently: skip without a request
       continue;
     }
     const r = await tryModel(client);
@@ -176,7 +190,7 @@ export async function callWithFallback(
 
   // Every model cooling down? Wait once for the earliest if it's close enough, else fail fast.
   if (chain.every((c) => coolingIn(c) > 0)) {
-    const cooling = chain.map((c) => ({ client: c, model: c.model, inMs: coolingIn(c) })).sort((a, b) => a.inMs - b.inMs);
+    const cooling = chain.map((c) => ({ client: c, model: labelOf(c), inMs: coolingIn(c) })).sort((a, b) => a.inMs - b.inMs);
     const first = cooling[0];
     if (first.inMs > maxWait) throw new AllModelsRateLimitedError(first.inMs, cooling);
     opts.onCooldownWait?.(first.model, first.inMs);
@@ -185,7 +199,7 @@ export async function callWithFallback(
     const r = await tryModel(first.client);
     if (r) return { raw: r.raw, client: first.client };
     if (chain.every((c) => coolingIn(c) > 0)) {
-      const again = chain.map((c) => ({ model: c.model, inMs: coolingIn(c) })).sort((a, b) => a.inMs - b.inMs);
+      const again = chain.map((c) => ({ model: labelOf(c), inMs: coolingIn(c) })).sort((a, b) => a.inMs - b.inMs);
       throw new AllModelsRateLimitedError(again[0].inMs, again);
     }
   }

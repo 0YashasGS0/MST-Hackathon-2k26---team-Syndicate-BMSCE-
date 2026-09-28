@@ -1,5 +1,5 @@
 // Shared "call the tool, validate, retry once with the errors appended" loop for every agent task.
-import { LlmOutputError, type LlmClient, type ToolDef } from "./llm";
+import { LlmOutputError, labelOf, type LlmClient, type ToolDef } from "./llm";
 import { AllModelsFailedError, AllModelsRateLimitedError, ModelCallError, callWithFallback, statusOf, type BackoffOptions } from "./resilience";
 
 export const MAX_ATTEMPTS = 2; // first try + one retry
@@ -15,6 +15,7 @@ export type AttemptLog = {
   statusCode?: number | null; // HTTP status for transient failures (null = network error)
   transient?: boolean; // true = 429/500/503/network try, handled by backoff/fallback, not by the validation retry
   retryDelayMs?: number; // 429 only: the model's cooldown
+  toolMode?: string; // how the tool call was forced for this client (e.g. named vs "required")
 };
 
 /** A single client, or a chain: primary first, then fallbacks (LLM_FALLBACK_MODELS). */
@@ -42,7 +43,7 @@ export async function callToolWithRetry<T>(opts: {
 }): Promise<{ value: T; provider: string; model: string }> {
   const { system, tool } = opts;
   const chain = chainOf(opts.llm);
-  const who = (c: LlmClient) => ({ provider: c.provider ?? "unknown", model: c.model });
+  const who = (c: LlmClient) => ({ provider: c.provider ?? "unknown", model: labelOf(c), ...(c.toolMode && { toolMode: c.toolMode }) });
   let issues: string[] = [];
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const prompt =
@@ -89,7 +90,7 @@ export async function callToolWithRetry<T>(opts: {
 
     const v = opts.validate(raw);
     opts.onAttempt?.({ attempt, ...who(answered), request, response: raw, ...(v.ok ? {} : { error: v.issues.join("; ") }) });
-    if (v.ok) return { value: v.value, ...who(answered) };
+    if (v.ok) return { value: v.value, provider: answered.provider ?? "unknown", model: labelOf(answered) };
     issues = v.issues;
   }
   throw new AgentValidationError(issues);

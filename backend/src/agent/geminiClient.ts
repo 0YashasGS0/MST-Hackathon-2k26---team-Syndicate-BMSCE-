@@ -21,6 +21,7 @@ export type GeminiModelsApi = {
 
 export class GeminiLlmClient implements LlmClient {
   readonly provider = "gemini";
+  id?: string; // "gemini:<model>" when built from LLM_CHAIN
   /** Always forced: every Gemini model gets mode ANY restricted to the one declared function. */
   readonly toolMode = "ANY (allowedFunctionNames = [the one declared function])";
   private readonly models: GeminiModelsApi;
