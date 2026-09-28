@@ -1,0 +1,25 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# node
+node_modules/
+.next/
+dist/
+
+# foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/lib/
+
+# local data
+*.sqlite
+*.db
+backend/uploads/
+
+# os / editor
+.DS_Store
+.vscode/
+.idea/
