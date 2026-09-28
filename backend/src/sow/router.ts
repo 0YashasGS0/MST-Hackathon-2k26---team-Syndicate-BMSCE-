@@ -4,20 +4,26 @@ import { z } from "zod";
 import { hashSow, parseSow } from "@kernel-exploits/shared";
 import { llmFromEnv, type LlmClient } from "../agent/llm";
 import { LlmUnavailableError, MERGE_PROMPT_VERSION, SowMergeError, mergeSow } from "../agent/mergeSow";
+import { getCaller } from "./auth";
 import { SowStore, type Draft } from "./store";
+import { createLinkVerifier, type LinkVerifier } from "./verifyLink";
 
 export type SowRouterDeps = {
   store?: SowStore;
   llm?: LlmClient;
   usdAddress?: string; // default env USD_ADDRESS
   demoFallback?: boolean; // default env AGENT_DEMO_FALLBACK === "true"
+  /** Injectable for tests; default is a viem verifier built from env MST_RPC_URL + ESCROW_ADDRESS. */
+  verifyLink?: LinkVerifier;
   now?: () => number; // unix seconds; injectable for tests
 };
 
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const address = z
   .string()
-  .regex(/^0x[0-9a-fA-F]{40}$/, "must be a 0x-prefixed 20-byte address")
+  .regex(ADDRESS_RE, "must be a 0x-prefixed 20-byte address")
   .transform((a) => a.toLowerCase());
+const baseUnits = z.string().regex(/^[1-9][0-9]*$/, "must be a positive base-unit integer string");
 
 const CreateDraftBody = z
   .object({
@@ -25,11 +31,20 @@ const CreateDraftBody = z
     seller: address,
     purpose: z.string().trim().min(1).max(2000),
     buyerConstraints: z.string().trim().min(1).max(5000),
-    amount: z.string().regex(/^[1-9][0-9]*$/, "must be a positive base-unit integer string"),
+    amount: baseUnits,
     deliveryDeadline: z.number().int().positive(),
     reviewWindowSecs: z.number().int().positive(),
   })
   .strict();
+
+const TermsBody = z
+  .object({
+    amount: baseUnits.optional(),
+    deliveryDeadline: z.number().int().positive().optional(),
+    reviewWindowSecs: z.number().int().positive().optional(),
+  })
+  .strict()
+  .refine((t) => Object.keys(t).length > 0, "provide at least one of amount, deliveryDeadline, reviewWindowSecs");
 
 const SellerInputBody = z.object({ sellerPoints: z.string().trim().min(1).max(5000) }).strict();
 const ApproveBody = z.object({ party: z.enum(["buyer", "seller"]), version: z.number().int().positive() }).strict();
@@ -51,21 +66,33 @@ class HttpError extends Error {
   }
 }
 
+/** Throws at construction (not at request time) if required config is missing. */
+function requireEnv(name: string, value: string | undefined, valid: (v: string) => boolean): string {
+  if (!value) throw new Error(`createSowRouter: missing required env ${name}`);
+  if (!valid(value)) throw new Error(`createSowRouter: env ${name} is invalid`);
+  return value;
+}
+
 export function createSowRouter(deps: SowRouterDeps = {}): Router {
+  const usdAddress = requireEnv("USD_ADDRESS", deps.usdAddress ?? process.env.USD_ADDRESS, (v) => ADDRESS_RE.test(v)).toLowerCase();
+  const verifyLink =
+    deps.verifyLink ??
+    createLinkVerifier({
+      rpcUrl: requireEnv("MST_RPC_URL", process.env.MST_RPC_URL, (v) => /^https?:\/\//.test(v)),
+      escrowAddress: requireEnv("ESCROW_ADDRESS", process.env.ESCROW_ADDRESS, (v) => ADDRESS_RE.test(v)),
+    });
   const store = deps.store ?? new SowStore();
   const llm = deps.llm ?? llmFromEnv();
-  const usdAddress = (deps.usdAddress ?? process.env.USD_ADDRESS ?? "").toLowerCase();
   const demoFallback = deps.demoFallback ?? process.env.AGENT_DEMO_FALLBACK === "true";
   const now = deps.now ?? (() => Math.floor(Date.now() / 1000));
 
   const router = express.Router();
   router.use("/drafts", express.json({ limit: "100kb" }));
 
-  // TODO(PG): replace x-user-address with the real session (SARAL / wallet signature) once /auth/* lands.
   function caller(req: Request): string {
-    const parsed = address.safeParse(req.header("x-user-address"));
-    if (!parsed.success) throw new HttpError(401, "Unauthenticated", "x-user-address header with a valid address is required");
-    return parsed.data;
+    const who = getCaller(req);
+    if (!who) throw new HttpError(401, "Unauthenticated", "caller identity is required");
+    return who;
   }
 
   function loadDraft(req: Request): Draft {
@@ -108,7 +135,7 @@ export function createSowRouter(deps: SowRouterDeps = {}): Router {
   router.post("/drafts", (req, res) => {
     const who = caller(req);
     const b = body(CreateDraftBody, req);
-    if (b.buyer !== who) throw new HttpError(403, "Forbidden", "only the buyer can create a draft (x-user-address must equal buyer)");
+    if (b.buyer !== who) throw new HttpError(403, "Forbidden", "only the buyer can create a draft (caller must equal buyer)");
     if (b.buyer === b.seller) throw new HttpError(400, "BadRequest", "buyer and seller must differ");
     if (b.deliveryDeadline <= now()) throw new HttpError(400, "BadRequest", "deliveryDeadline must be in the future");
     res.status(201).json(store.createDraft(b, now()));
@@ -118,6 +145,33 @@ export function createSowRouter(deps: SowRouterDeps = {}): Router {
     const draft = loadDraft(req);
     requireParty(draft, caller(req));
     res.json(withLatest(draft));
+  });
+
+  // Buyer changes server-owned terms. If a SOW exists, a new version is rebuilt from it (no LLM call); approvals reset.
+  router.patch("/drafts/:id/terms", (req, res) => {
+    const draft = loadDraft(req);
+    if (requireParty(draft, caller(req)) !== "buyer") throw new HttpError(403, "Forbidden", "only the buyer can edit terms");
+    if (draft.status === "linked") throw new HttpError(409, "BadStatus", "draft is already linked to an on-chain deal");
+    const t = body(TermsBody, req);
+    const terms = {
+      amount: t.amount ?? draft.amount,
+      deliveryDeadline: t.deliveryDeadline ?? draft.deliveryDeadline,
+      reviewWindowSecs: t.reviewWindowSecs ?? draft.reviewWindowSecs,
+    };
+    if (terms.deliveryDeadline <= now()) throw new HttpError(400, "BadRequest", "deliveryDeadline must be in the future");
+
+    const latest = store.getLatestVersion(draft.id);
+    store.db.transaction(() => {
+      store.updateTerms(draft.id, terms, now());
+      if (!latest) return;
+      const sow = parseSow({ ...JSON.parse(latest.sowJson), ...terms });
+      const changes = (Object.keys(terms) as (keyof typeof terms)[])
+        .filter((k) => terms[k] !== draft[k])
+        .map((k) => `${k} ${draft[k]} → ${terms[k]}`);
+      const note = `[server] Buyer updated terms in v${latest.version + 1}: ${changes.join(", ") || "no change"}`;
+      store.addVersion(draft.id, JSON.stringify(sow), hashSow(sow), [...latest.conflicts, note], now());
+    })();
+    res.json(withLatest(store.getDraft(draft.id)!));
   });
 
   router.post("/drafts/:id/seller-input", (req, res) => {
@@ -133,7 +187,6 @@ export function createSowRouter(deps: SowRouterDeps = {}): Router {
     requireParty(draft, caller(req));
     if (draft.status === "linked") throw new HttpError(409, "BadStatus", "draft is already linked to an on-chain deal");
     if (!draft.sellerPoints) throw new HttpError(409, "BadStatus", "waiting for seller input");
-    if (!/^0x[0-9a-f]{40}$/.test(usdAddress)) throw new HttpError(500, "Misconfigured", "USD_ADDRESS is not set");
 
     const result = await mergeSow(
       {
@@ -150,8 +203,7 @@ export function createSowRouter(deps: SowRouterDeps = {}): Router {
         llm,
         token: usdAddress,
         demoFallback,
-        onCall: (c) =>
-          store.logAgentCall({ draftId: draft.id, kind: "merge-sow", promptVersion: MERGE_PROMPT_VERSION, ...c }, now()),
+        onCall: (c) => store.logAgentCall({ subject: `draft:${draft.id}`, kind: "merge-sow", promptVersion: MERGE_PROMPT_VERSION, ...c }, now()),
       },
     );
     const sowHash = hashSow(result.sow);
@@ -181,7 +233,7 @@ export function createSowRouter(deps: SowRouterDeps = {}): Router {
     if (other) {
       // This approval completes the pair: check the SOW is still proposable before recording it.
       if (sow.deliveryDeadline <= now()) {
-        throw new HttpError(409, "DeadlinePassed", "SOW deliveryDeadline is in the past; proposeDeal would revert. Create a new draft.");
+        throw new HttpError(409, "DeadlinePassed", "SOW deliveryDeadline is in the past; proposeDeal would revert. Update it via PATCH /drafts/:id/terms.");
       }
       if (sow.token.toLowerCase() !== usdAddress) {
         throw new HttpError(409, "TokenMismatch", "SOW token does not match the deployed stablecoin (USD_ADDRESS)");
@@ -207,12 +259,22 @@ export function createSowRouter(deps: SowRouterDeps = {}): Router {
     });
   });
 
-  // TODO(B1): optionally verify txHash's DealProposed event (dealId, sowHash) via the indexer before linking.
-  router.post("/drafts/:id/link", (req, res) => {
+  // Buyer links the on-chain deal; the tx's DealProposed must match this draft's parties, amount and approved SOW hash.
+  router.post("/drafts/:id/link", async (req, res) => {
     const draft = loadDraft(req);
     if (requireParty(draft, caller(req)) !== "buyer") throw new HttpError(403, "Forbidden", "only the buyer links the proposed deal");
     if (draft.status !== "approved") throw new HttpError(409, "BadStatus", `cannot link in status ${draft.status}`);
     const { dealId, txHash } = body(LinkBody, req);
+    const approved = store.getLatestVersion(draft.id)!;
+    const sow = parseSow(JSON.parse(approved.sowJson));
+
+    let result;
+    try {
+      result = await verifyLink({ txHash, dealId, buyer: draft.buyer, seller: draft.seller, amount: sow.amount, sowHash: approved.sowHash });
+    } catch (err) {
+      throw new HttpError(502, "ChainUnavailable", `could not read the transaction from MST: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!result.ok) throw new HttpError(422, "LinkVerificationFailed", result.reason);
     res.json(store.link(draft.id, dealId, txHash.toLowerCase(), now()));
   });
 

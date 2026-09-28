@@ -15,6 +15,9 @@ export interface LlmClient {
   callTool(req: ToolCallRequest): Promise<unknown>;
 }
 
+/** Metadata about the most recent call (no prompt, no headers, no key) — used by the smoke script. */
+export type LlmCallInfo = { forcedToolChoice: boolean; toolCalled: boolean; stopReason: string | null; latencyMs: number };
+
 /** The model answered but not in a usable shape (no tool call, refusal, truncation) — worth one retry. */
 export class LlmOutputError extends Error {}
 
@@ -25,16 +28,19 @@ const NO_FORCED_TOOL = /^claude-(opus-5-5|fable-5-1|mythos-5-1)/;
 
 export class AnthropicLlmClient implements LlmClient {
   private readonly client: Anthropic;
+  lastCall?: LlmCallInfo;
 
   constructor(
     readonly model: string,
     apiKey: string,
   ) {
-    this.client = new Anthropic({ apiKey });
+    // logLevel "warn": never let SDK debug logging print request headers (API key) or prompts.
+    this.client = new Anthropic({ apiKey, logLevel: "warn" });
   }
 
   async callTool({ system, prompt, tool }: ToolCallRequest): Promise<unknown> {
     const forced = !NO_FORCED_TOOL.test(this.model);
+    const started = Date.now();
     const res = await this.client.messages.create({
       model: this.model,
       max_tokens: 8000,
@@ -46,9 +52,10 @@ export class AnthropicLlmClient implements LlmClient {
         { role: "user", content: forced ? prompt : `${prompt}\n\nRespond only by calling the ${tool.name} tool.` },
       ],
     });
+    const call = res.content.find((b) => b.type === "tool_use" && b.name === tool.name);
+    this.lastCall = { forcedToolChoice: forced, toolCalled: !!call, stopReason: res.stop_reason, latencyMs: Date.now() - started };
     if (res.stop_reason === "refusal") throw new LlmOutputError("model refused the request");
     if (res.stop_reason === "max_tokens") throw new LlmOutputError("model output was truncated (max_tokens)");
-    const call = res.content.find((b) => b.type === "tool_use" && b.name === tool.name);
     if (!call || call.type !== "tool_use") throw new LlmOutputError(`model did not call ${tool.name}`);
     return call.input;
   }

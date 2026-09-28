@@ -14,16 +14,17 @@
 
 ## Drafts & SOW
 > B2's router, mounted by B1 (`app.use(createSowRouter())`). Paths are `/drafts/*` so they never clash with B1's on-chain `/deals/:id`.
-> Caller identity: header `x-user-address: 0x…` (temporary, until PG's auth lands). Missing → 401; not a party → 403.
+> Caller identity: `getCaller(req)` in `backend/src/sow/auth.ts`, currently the header `x-user-address: 0x…` (temporary, until PG's signed login replaces it). Missing → 401; not a party → 403.
 
 | Method | Path | Owner | Body → Response |
 |---|---|---|---|
 | POST | `/drafts` | B2 | `{ buyer, seller, purpose, buyerConstraints, amount, deliveryDeadline, reviewWindowSecs }` → `Draft` (201). Caller must be `buyer`. `amount` base-unit string > 0; `deliveryDeadline` unix s, future |
 | GET | `/drafts/:id` | B2 | → `Draft & { latestSow: SowVersion \| null }` (parties only) |
+| PATCH | `/drafts/:id/terms` | B2 | any of `{ amount, deliveryDeadline, reviewWindowSecs }` → `Draft & { latestSow }`. Buyer only; 409 once linked. If a SOW exists, a new version is rebuilt from it with the new terms (no LLM call), re-hashed, and both approvals reset |
 | POST | `/drafts/:id/seller-input` | B2 | `{ sellerPoints }` → `Draft` (seller only; status → `ready_to_merge`) |
 | POST | `/drafts/:id/merge-sow` | B2 | — → `{ version, sow: SOW, sowHash, conflicts: string[] }`. New version, approvals reset. 422 `SowValidationFailed` if the agent can't produce a valid SOW after 1 retry; 502 `LlmUnavailable` |
 | POST | `/drafts/:id/approve-sow` | B2 | `{ party: "buyer"\|"seller", version }` → `{ bothApproved, version, sowHash, proposeDealArgs? }`. `version` must be the latest (409 `StaleVersion`); 409 `DeadlinePassed` / `TokenMismatch` block the final approval |
-| POST | `/drafts/:id/link` | B2 | `{ dealId, txHash }` → `Draft` (buyer only, after both approved; status → `linked`) |
+| POST | `/drafts/:id/link` | B2 | `{ dealId, txHash }` → `Draft` (buyer only, after both approved; status → `linked`). Reads the receipt from MST: it must succeed, be sent to `ESCROW_ADDRESS`, and emit `DealProposed` with matching id, buyer, seller, amount and the approved `sowHash`. Otherwise 422 `LinkVerificationFailed` with the specific mismatch; 502 `ChainUnavailable` if the RPC fails |
 
 ## Deals (on-chain backed)
 | Method | Path | Owner | Body → Response |

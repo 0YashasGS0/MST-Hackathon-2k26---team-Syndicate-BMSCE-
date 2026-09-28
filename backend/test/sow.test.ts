@@ -5,6 +5,7 @@ import { hashSow, parseSow } from "@kernel-exploits/shared";
 import { createSowRouter } from "../src/sow";
 import { SowStore } from "../src/sow/store";
 import type { LlmClient, ToolCallRequest } from "../src/agent/llm";
+import type { LinkVerifier } from "../src/sow/verifyLink";
 
 const BUYER = "0x1111111111111111111111111111111111111111";
 const SELLER = "0x2222222222222222222222222222222222222222";
@@ -33,10 +34,11 @@ class MockLlm implements LlmClient {
 }
 
 let clock: number;
-function makeApp(llm: LlmClient) {
+const okVerifier: LinkVerifier = async () => ({ ok: true });
+function makeApp(llm: LlmClient, verifyLink: LinkVerifier = okVerifier) {
   const store = new SowStore(":memory:");
   const app = express();
-  app.use(createSowRouter({ store, llm, usdAddress: USD, demoFallback: false, now: () => clock }));
+  app.use(createSowRouter({ store, llm, usdAddress: USD, demoFallback: false, verifyLink, now: () => clock }));
   return { app, store };
 }
 
@@ -145,7 +147,7 @@ describe("SOW negotiation router", () => {
     expect(llm.calls).toHaveLength(2);
     expect(llm.calls[1].prompt).toMatch(/failed validation[\s\S]*sum to 10000, got 9000/);
     expect(store.getLatestVersion(id)).toBeUndefined(); // nothing stored, weights never normalised
-    const calls = store.db.prepare("SELECT COUNT(*) AS n FROM agent_calls WHERE draft_id = ?").get(id) as { n: number };
+    const calls = store.db.prepare("SELECT COUNT(*) AS n FROM agent_calls WHERE subject = ?").get(`draft:${id}`) as { n: number };
     expect(calls.n).toBe(2);
   });
 
@@ -204,7 +206,7 @@ describe("SOW negotiation router", () => {
   it("AGENT_DEMO_FALLBACK returns a valid SOW without calling the LLM", async () => {
     const store = new SowStore(":memory:");
     const app = express();
-    app.use(createSowRouter({ store, usdAddress: USD, demoFallback: true, now: () => clock }));
+    app.use(createSowRouter({ store, usdAddress: USD, demoFallback: true, verifyLink: okVerifier, now: () => clock }));
     const { merge } = await toMerged(app);
     expect(merge.status).toBe(200);
     expect(() => parseSow(merge.body.sow)).not.toThrow();

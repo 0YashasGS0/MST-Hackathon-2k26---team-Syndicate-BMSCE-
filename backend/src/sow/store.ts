@@ -42,7 +42,7 @@ export type NewDraft = Pick<
 >;
 
 export type AgentCall = {
-  draftId: string;
+  subject: string; // "draft:<id>" or "deal:<id>"
   kind: string;
   attempt: number;
   model: string;
@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS sow_versions (
 -- Audit log of every LLM request/response (API key is never part of the request body).
 CREATE TABLE IF NOT EXISTS agent_calls (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
-  draft_id       TEXT NOT NULL,
+  subject        TEXT NOT NULL,
   kind           TEXT NOT NULL,
   attempt        INTEGER NOT NULL,
   model          TEXT NOT NULL,
@@ -97,6 +97,15 @@ CREATE TABLE IF NOT EXISTS agent_calls (
   error          TEXT,
   created_at     INTEGER NOT NULL
 );
+
+-- Full reasoning object behind each on-chain reasoningHash (read by /verify).
+CREATE TABLE IF NOT EXISTS dispute_rulings (
+  reasoning_hash TEXT PRIMARY KEY,
+  deal_id        INTEGER NOT NULL,
+  reasoning_json TEXT NOT NULL,
+  created_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS dispute_rulings_deal_idx ON dispute_rulings (deal_id);
 `;
 
 type DraftRow = {
@@ -223,6 +232,12 @@ export class SowStore {
     return this.getVersion(draftId, version)!;
   }
 
+  updateTerms(id: string, t: { amount: string; deliveryDeadline: number; reviewWindowSecs: number }, now: number): void {
+    this.db
+      .prepare(`UPDATE drafts SET amount = ?, delivery_deadline = ?, review_window_secs = ?, updated_at = ? WHERE id = ?`)
+      .run(t.amount, t.deliveryDeadline, t.reviewWindowSecs, now, id);
+  }
+
   setStatus(draftId: string, status: DraftStatus, now: number): void {
     this.db.prepare(`UPDATE drafts SET status = ?, updated_at = ? WHERE id = ?`).run(status, now, draftId);
   }
@@ -237,11 +252,11 @@ export class SowStore {
   logAgentCall(call: AgentCall, now: number): void {
     this.db
       .prepare(
-        `INSERT INTO agent_calls (draft_id, kind, attempt, model, prompt_version, request_json, response_json, error, created_at)
+        `INSERT INTO agent_calls (subject, kind, attempt, model, prompt_version, request_json, response_json, error, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        call.draftId,
+        call.subject,
         call.kind,
         call.attempt,
         call.model,
@@ -251,6 +266,20 @@ export class SowStore {
         call.error ?? null,
         now,
       );
+  }
+
+  /** Idempotent: the same reasoning always has the same hash. */
+  saveRuling(reasoningHash: string, dealId: number, reasoning: unknown, now: number): void {
+    this.db
+      .prepare(`INSERT OR IGNORE INTO dispute_rulings (reasoning_hash, deal_id, reasoning_json, created_at) VALUES (?, ?, ?, ?)`)
+      .run(reasoningHash, dealId, JSON.stringify(reasoning), now);
+  }
+
+  getRuling(reasoningHash: string): unknown | undefined {
+    const row = this.db.prepare(`SELECT reasoning_json FROM dispute_rulings WHERE reasoning_hash = ?`).get(reasoningHash) as
+      | { reasoning_json: string }
+      | undefined;
+    return row && JSON.parse(row.reasoning_json);
   }
 }
 
