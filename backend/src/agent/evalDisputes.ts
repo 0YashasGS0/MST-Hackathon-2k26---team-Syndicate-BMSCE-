@@ -7,7 +7,7 @@
 // Scenario:      PASS | FAIL (any fail) | INCOMPLETE (no fails, but some runs errored or a baseline is missing)
 import { hasCriteria, hashSow, type RulingScore } from "@kernel-exploits/shared";
 import { SowStore } from "../sow/store";
-import type { BackoffOptions } from "./resilience";
+import { retryDelayMsFrom, type BackoffOptions } from "./resilience";
 import type { GroundTruthVerdict, Scenario } from "./scenarios";
 import { scoreDispute } from "./scoreDispute";
 import { AgentValidationError, type LlmChain } from "./toolRetry";
@@ -58,23 +58,21 @@ export type EvalOptions = {
   llm: LlmChain;
   promptVersion: string;
   delayMs?: number; // between calls (default 7000; env EVAL_DELAY_MS in the script)
-  maxRetryDelayMs?: number; // cap for a 429's retryDelay (default 30000)
+  maxRetryDelayMs?: number; // cap for a 429's retryDelay (default 65000; per-model cooldowns prevent extra requests)
   relativeChecks?: RelativeCheck[];
   sleep?: (ms: number) => Promise<void>;
   backoff?: BackoffOptions;
   onRow?: (row: EvalRow) => void;
   onWait?: (ms: number, reason: string) => void;
+  /** A model went on cooldown after a 429 (printed as "cooldown: <model> until +Ns"). */
+  onCooldown?: (model: string, ms: number) => void;
 };
 
-/** Gemini's RetryInfo (`"retryDelay": "23s"`) from an error message, in ms. */
-export function retryDelayMsFrom(message: string): number | null {
-  const m = message.match(/"?retryDelay"?\s*[:=]\s*"?(\d+(?:\.\d+)?)s"?/);
-  return m ? Math.round(Number(m[1]) * 1000) : null;
-}
+export { retryDelayMsFrom };
 
 export async function runEval(opts: EvalOptions): Promise<{ rows: EvalRow[]; summary: EvalSummary[] }> {
   const baseDelay = opts.delayMs ?? 7000;
-  const cap = opts.maxRetryDelayMs ?? 30_000;
+  const cap = opts.maxRetryDelayMs ?? 65_000;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const store = new SowStore(":memory:"); // never touches the real DB; also where 429 retryDelays are read from
   const rows: EvalRow[] = [];
@@ -141,9 +139,11 @@ export async function runEval(opts: EvalOptions): Promise<{ rows: EvalRow[]; sum
       // Next wait: the base delay, or a 429's retryDelay (capped) if this run hit one.
       nextDelay = baseDelay;
       const hits = store.db
-        .prepare("SELECT error FROM agent_calls WHERE id > ? AND status_code = 429 AND error IS NOT NULL")
-        .all(lastLogId) as { error: string }[];
-      const retry = Math.max(0, ...hits.map((h) => retryDelayMsFrom(h.error) ?? 0));
+        .prepare("SELECT model, retry_delay_ms, error FROM agent_calls WHERE id > ? AND status_code = 429 ORDER BY id")
+        .all(lastLogId) as { model: string; retry_delay_ms: number | null; error: string | null }[];
+      const delays = hits.map((h) => h.retry_delay_ms ?? retryDelayMsFrom(h.error ?? "") ?? 0);
+      hits.forEach((h, i) => opts.onCooldown?.(h.model, delays[i]));
+      const retry = Math.max(0, ...delays);
       if (retry > 0) {
         nextDelay = Math.max(baseDelay, Math.min(retry, cap));
         opts.onWait?.(nextDelay, `429 retryDelay ${retry} ms${retry > cap ? ` (capped at ${cap} ms)` : ""}`);

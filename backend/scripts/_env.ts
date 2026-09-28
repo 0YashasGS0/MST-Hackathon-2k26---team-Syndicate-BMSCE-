@@ -21,6 +21,7 @@ export function attemptRecorder(chain: readonly LlmClient[]) {
     const mode = `mode=${client.toolMode ?? "unknown"}`;
     if (a.transient) {
       lines.push(`attempt ${a.attempt} · model=${a.model} · status=${a.statusCode ?? "network error"} (transient) · ${mode}, no response`);
+      if (a.retryDelayMs !== undefined) lines.push(`cooldown: ${a.model} until +${Math.ceil(a.retryDelayMs / 1000)}s (not retried; next model)`);
       return;
     }
     const info: LlmCallInfo | undefined = client.lastCall;
@@ -45,7 +46,9 @@ export function attemptRecorder(chain: readonly LlmClient[]) {
     console.log(`mode:     ${chain[0].toolMode}`);
     console.log(`models:   ${chain.map((c) => c.model).join(" → ")}`);
   };
-  return { onAttempt, print, header };
+  /** Pass as `backoff` so a wait for a cooled-down model is shown too. */
+  const backoff = { onCooldownWait: (model: string, ms: number) => lines.push(`all models cooling: waiting ${Math.ceil(ms / 1000)}s for ${model}`) };
+  return { onAttempt, print, header, backoff };
 }
 
 export const SAMPLE_PARTIES = {

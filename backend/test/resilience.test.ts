@@ -4,7 +4,7 @@ import { hashJson, hashSow, type Sow } from "@kernel-exploits/shared";
 import { createLlmChain } from "../src/agent/createLlmClient";
 import { GeminiLlmClient, type GeminiModelsApi } from "../src/agent/geminiClient";
 import { MERGE_TOOL, mergeSow } from "../src/agent/mergeSow";
-import { AllModelsFailedError, callWithFallback, isTransient } from "../src/agent/resilience";
+import { AllModelsFailedError, AllModelsRateLimitedError, ModelCooldowns, callWithFallback, isTransient } from "../src/agent/resilience";
 import { LlmUnavailableError, scoreDispute } from "../src/agent";
 import { SowStore } from "../src/sow/store";
 
@@ -128,8 +128,9 @@ describe("transient backoff + model fallback", () => {
     ];
     const err = await mergeSow(mergeInput, { llm: chain, token: TOKEN, demoFallback: false, backoff }).catch((e) => e);
     expect(err).toBeInstanceOf(LlmUnavailableError);
+    // a 429 is never retried on the same model (cooldown + move on); 503/network keep their 3 tries
     expect(err.message).toBe(
-      "all LLM models failed: gemini-3.8-flash (503, 503, 503); gemini-3.7-flash (429, 429, 429); gemini-2.5-flash (network error, network error, network error)",
+      "all LLM models failed: gemini-3.8-flash (503, 503, 503); gemini-3.7-flash (429); gemini-2.5-flash (network error, network error, network error)",
     );
   });
 
@@ -165,3 +166,100 @@ describe("createLlmChain", () => {
     expect(createLlmChain({ LLM_API_KEY: "k", LLM_MODEL: "g" })?.map((c) => c.model)).toEqual(["g"]);
   });
 });
+
+describe("429: per-model cooldown, no same-model retry", () => {
+  const rate429 = (delay: string) =>
+    new ApiError({ status: 429, message: `{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"${delay}"}]}}` });
+  const req = { system: "s", prompt: "p", tool: MERGE_TOOL };
+  function world() {
+    let t = 1_000_000;
+    const sleeps: number[] = [];
+    return {
+      sleeps,
+      advance: (ms: number) => void (t += ms),
+      opts: { cooldowns: new ModelCooldowns(), now: () => t, sleep: async (ms: number) => { sleeps.push(ms); t += ms; }, random: () => 0.5 },
+    };
+  }
+
+  it("a 429 on the primary → fallback called immediately; primary not retried; 429 logged with its retryDelay", async () => {
+    const w = world();
+    const primary = scripted([api(429, '"retryDelay":"55s"')]);
+    const second = scripted([fnCall("submit_sow", sowArgs)]);
+    const store = new SowStore(":memory:");
+    const r = await mergeSow(mergeInput, {
+      llm: [new GeminiLlmClient("gemini-3.8-flash", "k", primary.models), new GeminiLlmClient("gemini-3.7-flash", "k", second.models)],
+      token: TOKEN, demoFallback: false, backoff: w.opts,
+      onCall: (a) => store.logAgentCall({ subject: "draft:x", kind: "merge-sow", promptVersion: "v1", ...a }, 1),
+    });
+    expect(primary.calls).toHaveLength(1);
+    expect(second.calls).toHaveLength(1);
+    expect(w.sleeps).toEqual([]);
+    expect(r.model).toBe("gemini-3.7-flash");
+    expect(store.db.prepare("SELECT model, status_code, transient, retry_delay_ms FROM agent_calls WHERE status_code = 429").all()).toEqual([
+      { model: "gemini-3.8-flash", status_code: 429, transient: 1, retry_delay_ms: 55000 },
+    ]);
+  });
+
+  it("the cooldown skips the primary on later calls until it expires", async () => {
+    const w = world();
+    const primary = scripted([api(429, '"retryDelay":"55s"'), fnCall("submit_sow", sowArgs)]);
+    const second = scripted([fnCall("submit_sow", sowArgs)]);
+    const chain = [new GeminiLlmClient("p", "k", primary.models), new GeminiLlmClient("f", "k", second.models)];
+    expect((await callWithFallback(chain, req, undefined, w.opts)).client.model).toBe("f");
+    w.advance(30_000);
+    expect((await callWithFallback(chain, req, undefined, w.opts)).client.model).toBe("f"); // still cooling: no request to p
+    expect(primary.calls).toHaveLength(1);
+    w.advance(26_000); // past 55 s
+    expect((await callWithFallback(chain, req, undefined, w.opts)).client.model).toBe("p");
+    expect(primary.calls).toHaveLength(2);
+  });
+
+  it("all models cooling, earliest in 40 s → waits once, then succeeds on that model", async () => {
+    const w = world();
+    const a = scripted([api(429, '"retryDelay":"40s"'), fnCall("submit_sow", sowArgs)]);
+    const b = scripted([api(429, '"retryDelay":"50s"')]);
+    const waited: string[] = [];
+    const chain = [new GeminiLlmClient("a", "k", a.models), new GeminiLlmClient("b", "k", b.models)];
+    const r = await callWithFallback(chain, req, undefined, { ...w.opts, onCooldownWait: (m, ms) => waited.push(`${m} ${ms}`) });
+    expect(r.client.model).toBe("a");
+    expect(w.sleeps).toEqual([40_000]);
+    expect(waited).toEqual(["a 40000"]);
+    expect(a.calls).toHaveLength(2);
+    expect(b.calls).toHaveLength(1);
+  });
+
+  it("all models cooling, earliest in 120 s → fails fast with a clear message, no request, no wait", async () => {
+    const w = world();
+    const a = scripted([api(429, '"retryDelay":"120s"')]);
+    const b = scripted([api(429, '"retryDelay":"150s"')]);
+    const chain = [new GeminiLlmClient("a", "k", a.models), new GeminiLlmClient("b", "k", b.models)];
+    const err = await callWithFallback(chain, req, undefined, w.opts).catch((e) => e);
+    expect(err).toBeInstanceOf(AllModelsRateLimitedError);
+    expect(err.message).toBe("all models rate-limited; earliest retry in 120s (a +120s, b +150s)");
+    expect(w.sleeps).toEqual([]);
+    // a later call while still cooling makes no requests at all
+    const again = await callWithFallback(chain, req, undefined, w.opts).catch((e) => e);
+    expect(again.message).toMatch(/^all models rate-limited; earliest retry in 120s/);
+    expect(a.calls).toHaveLength(1);
+    expect(b.calls).toHaveLength(1);
+  });
+
+  it("LLM_MAX_COOLDOWN_WAIT_MS sets the wait limit; a 429 without RetryInfo cools for 60 s", async () => {
+    const w = world();
+    const a = scripted([api(429, "429 RESOURCE_EXHAUSTED")]);
+    const err = await callWithFallback([new GeminiLlmClient("a", "k", a.models)], req, undefined, { ...w.opts, maxCooldownWaitMs: 30_000 }).catch((e) => e);
+    expect(err.message).toBe("all models rate-limited; earliest retry in 60s (a +60s)");
+  });
+
+  it("503 behaviour unchanged: 3 tries with backoff, no cooldown, retried again on the next call", async () => {
+    const w = world();
+    const p = scripted([api(503), api(503), api(503), fnCall("submit_sow", sowArgs)]);
+    const f = scripted([fnCall("submit_sow", sowArgs)]);
+    const chain = [new GeminiLlmClient("p", "k", p.models), new GeminiLlmClient("f", "k", f.models)];
+    expect((await callWithFallback(chain, req, undefined, w.opts)).client.model).toBe("f");
+    expect(p.calls).toHaveLength(3);
+    expect(w.sleeps).toEqual([1000, 2000]);
+    expect((await callWithFallback(chain, req, undefined, w.opts)).client.model).toBe("p"); // no cooldown for 503
+  });
+});
+

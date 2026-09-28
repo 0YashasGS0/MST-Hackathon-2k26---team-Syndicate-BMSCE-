@@ -29,7 +29,7 @@ const rec = attemptRecorder(llm);
 rec.header();
 const started = Date.now();
 try {
-  const result = await mergeSow(input, { llm, token, demoFallback: false, onCall: rec.onAttempt });
+  const result = await mergeSow(input, { llm, token, demoFallback: false, onCall: rec.onAttempt, backoff: rec.backoff });
   rec.print();
   console.log("validation: PASSED");
   console.log(`result.model: ${result.model}`);

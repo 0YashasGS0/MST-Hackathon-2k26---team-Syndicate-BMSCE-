@@ -1,6 +1,6 @@
 // Runs every demo scenario EVAL_RUNS times (default 3) through the real scoreDispute with the configured
 // provider/model/fallbacks and AGENT_PROMPT_VERSION. EVAL_DELAY_MS (default 7000) between calls, longer after a
-// 429 that carries a retryDelay (capped at 30 s). Never prints the key or prompts.
+// 429 that carries a retryDelay (up to 65 s). Never prints the key or prompts.
 // Usage: npm run eval:disputes      (compare prompts: AGENT_PROMPT_VERSION=v3 npm run eval:disputes)
 // Filters: EVAL_SCENARIOS=A,D (default: all), EVAL_RUNS=3.
 import "./_env";
@@ -59,6 +59,8 @@ const { summary } = await runEval({
     for (const line of formatDetails(r, byId.get(r.scenario)!)) console.log(line);
   },
   onWait: (ms, reason) => console.log(`    (waiting ${ms} ms: ${reason})`),
+  onCooldown: (model, ms) => console.log(`    cooldown: ${model} until +${Math.ceil(ms / 1000)}s`),
+  backoff: { onCooldownWait: (model, ms) => console.log(`    (all models cooling: waiting ${Math.ceil(ms / 1000)}s for ${model})`) },
 });
 
 console.log("\nsummary");

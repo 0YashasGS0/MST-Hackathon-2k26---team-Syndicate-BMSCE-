@@ -1,6 +1,6 @@
 // Shared "call the tool, validate, retry once with the errors appended" loop for every agent task.
 import { LlmOutputError, type LlmClient, type ToolDef } from "./llm";
-import { AllModelsFailedError, ModelCallError, callWithFallback, statusOf, type BackoffOptions } from "./resilience";
+import { AllModelsFailedError, AllModelsRateLimitedError, ModelCallError, callWithFallback, statusOf, type BackoffOptions } from "./resilience";
 
 export const MAX_ATTEMPTS = 2; // first try + one retry
 
@@ -14,6 +14,7 @@ export type AttemptLog = {
   error?: string;
   statusCode?: number | null; // HTTP status for transient failures (null = network error)
   transient?: boolean; // true = 429/500/503/network try, handled by backoff/fallback, not by the validation retry
+  retryDelayMs?: number; // 429 only: the model's cooldown
 };
 
 /** A single client, or a chain: primary first, then fallbacks (LLM_FALLBACK_MODELS). */
@@ -61,14 +62,18 @@ export async function callToolWithRetry<T>(opts: {
             attempt,
             ...who(t.client),
             request,
-            error: `transient try ${t.try}: ${t.error}`,
+            error:
+              t.retryDelayMs !== undefined
+                ? `rate limited (429): cooldown ${Math.ceil(t.retryDelayMs / 1000)}s, not retried on this model: ${t.error}`
+                : `transient try ${t.try}: ${t.error}`,
             statusCode: t.statusCode,
             transient: true,
+            ...(t.retryDelayMs !== undefined && { retryDelayMs: t.retryDelayMs }),
           }),
         opts.backoff,
       ));
     } catch (err) {
-      if (err instanceof AllModelsFailedError) throw new LlmUnavailableError(err.message);
+      if (err instanceof AllModelsFailedError || err instanceof AllModelsRateLimitedError) throw new LlmUnavailableError(err.message);
       const failed = err instanceof ModelCallError ? err.client : chain[0];
       const cause = err instanceof ModelCallError ? err.cause : err;
       const msg = cause instanceof Error ? cause.message : String(cause);

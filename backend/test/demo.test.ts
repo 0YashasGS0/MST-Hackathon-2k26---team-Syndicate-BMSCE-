@@ -95,25 +95,32 @@ describe("eval harness (mocked client)", () => {
     expect(dCall.system).toBe(DISPUTE_PROMPTS.v2);
   });
 
-  it("429 runs are ERROR, excluded from stats → INCOMPLETE with 'valid runs: 1/3'; retryDelay drives the next wait (capped at 30 s)", async () => {
-    const { client } = scripted({ B: [[100, 100, 100], rate429("12s"), rate429("12s"), rate429("12s"), rate429("45s"), rate429("45s"), rate429("45s")] });
+  it("429 runs are ERROR, excluded from stats → INCOMPLETE with 'valid runs: 1/3'; retryDelay drives the next wait (capped at 65 s)", async () => {
+    // single-model chain: a 429 puts it on cooldown; all models cooling (≤65 s) → one wait, one retry → 429 again → ERROR
+    const { client } = scripted({ B: [[100, 100, 100], rate429("12s"), rate429("12s"), rate429("45s"), rate429("45s")] });
     const sleeps: number[] = [];
     const waits: string[] = [];
+    const cooldowns: string[] = [];
     const { rows, summary } = await runEval({
       scenarios: [byId.B], runs: 3, llm: client, promptVersion: "v1", backoff: noBackoff,
-      sleep: async (ms) => void sleeps.push(ms), onWait: (_ms, why) => waits.push(why),
+      sleep: async (ms) => void sleeps.push(ms), onWait: (_ms, why) => waits.push(why), onCooldown: (m, ms) => cooldowns.push(`${m} +${ms / 1000}s`),
     });
     expect(rows.map((r) => r.status)).toEqual(["ok", "error", "error"]);
-    expect(rows[1].error).toMatch(/all LLM models failed: mock-eval \(429, 429, 429\)/);
-    expect(sleeps).toEqual([7000, 12000]); // after run 1: base delay; after run 2 (429 with retryDelay 12s): 12 s
+    expect(rows[1].error).toMatch(/^all models rate-limited; earliest retry in 12s/);
+    expect(sleeps).toEqual([7000, 12000]); // after run 1: base delay; after run 2 (429 retryDelay 12s): 12 s
+    // run 2: 429 → cooldown → wait once → 429 again; run 3 starts while still cooling, so it skips the request,
+    // waits once and makes a single call (429 45s) — the cooldown saves a request
+    expect(cooldowns).toEqual(["mock-eval +12s", "mock-eval +12s", "mock-eval +45s"]);
+    expect(rows[2].error).toMatch(/^all models rate-limited; earliest retry in 45s/);
     const b = status(summary, "B");
     expect(b).toMatchObject({ status: "INCOMPLETE", validRuns: 1, runs: 3, min: 0, max: 0, spread: 0 });
     expect(formatSummary(b)[0]).toContain("valid runs: 1/3");
     expect(formatRow(rows[1], byId.B)).toMatch(/ERROR/);
-    // a 45 s retryDelay is capped at 30 s
-    const r2 = await runEval({ scenarios: [byId.B], runs: 2, llm: scripted({ B: [rate429("45s")] }).client, promptVersion: "v1", backoff: noBackoff, sleep: async (ms) => void sleeps.push(ms), onWait: (_ms, why) => waits.push(why) });
-    expect(sleeps.at(-1)).toBe(30000);
-    expect(waits.at(-1)).toMatch(/capped at 30000 ms/);
+    // a 90 s retryDelay is capped at 65 s (and, being > 65 s, the in-call cooldown fails fast instead of waiting)
+    const r2 = await runEval({ scenarios: [byId.B], runs: 2, llm: scripted({ B: [rate429("90s")] }).client, promptVersion: "v1", backoff: noBackoff, sleep: async (ms) => void sleeps.push(ms), onWait: (_ms, why) => waits.push(why) });
+    expect(sleeps.at(-1)).toBe(65000);
+    expect(waits.at(-1)).toMatch(/capped at 65000 ms/);
+    expect(r2.rows[0].error).toMatch(/^all models rate-limited; earliest retry in 90s/);
     expect(status(r2.summary, "B")).toMatchObject({ status: "INCOMPLETE", validRuns: 0, min: null });
   });
 
