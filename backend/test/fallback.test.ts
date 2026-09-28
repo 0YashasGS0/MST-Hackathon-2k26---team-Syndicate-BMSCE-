@@ -131,14 +131,15 @@ describe("AGENT_FALLBACK_ON_FAILURE", () => {
     }
   });
 
-  it("the default prompt version is v3", async () => {
+  it("the default prompt version is v4", async () => {
     const saved = process.env.AGENT_PROMPT_VERSION;
     delete process.env.AGENT_PROMPT_VERSION;
     try {
       let system = "";
       const spy: LlmClient = { model: "m", callTool: async (req) => { system = req.system; return { scores: [] }; } };
       await scoreDispute(inputFor(byId.A.sow), { llm: spy, store: new SowStore(":memory:"), demoFallback: false, now: () => 1 }).catch(() => {});
-      expect(system).toMatch(/You give verdicts only; code computes all percentages/);
+      expect(system).toMatch(/Burden of proof/);
+      expect(system).toMatch(/UNDISPUTED: if the complaint does not dispute a criterion/);
     } finally {
       if (saved !== undefined) process.env.AGENT_PROMPT_VERSION = saved;
     }

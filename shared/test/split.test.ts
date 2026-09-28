@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeBuyerBps, criterionScore, fulfilledFromCriteria } from "../src";
+import { computeBuyerBps, criterionScore, fulfilledFromCriteria, validateBasis } from "../src";
 
 const d = (...w: number[]) => w.map((weightBps, i) => ({ id: `D${i + 1}`, weightBps }));
 const s = (...p: number[]) => p.map((fulfilledPct, i) => ({ id: `D${i + 1}`, fulfilledPct }));
@@ -63,6 +63,18 @@ describe("criterion maths (v3)", () => {
     expect(() => criterionScore({ index: 0, verdict: "partial", satisfied: 1.5, total: 3 })).toThrow(/integer/);
     expect(() => criterionScore({ index: 0, verdict: "met", satisfied: 3, total: 4 })).toThrow(/contradictory/);
     expect(() => criterionScore({ index: 0, verdict: "met", satisfied: 4, total: 4 })).not.toThrow();
+  });
+});
+
+describe("basis rules (v4)", () => {
+  it("admission and undisputed require met; evidence allows any verdict", () => {
+    expect(() => validateBasis(0, "met", "admission")).not.toThrow();
+    expect(() => validateBasis(0, "met", "undisputed")).not.toThrow();
+    expect(() => validateBasis(0, "not_met", "admission")).toThrow('criterion 0: basis "admission" requires verdict "met" (got "not_met")');
+    expect(() => validateBasis(1, "partial", "undisputed")).toThrow(/requires verdict "met"/);
+    for (const v of ["met", "partial", "not_met"] as const) expect(() => validateBasis(0, v, "evidence")).not.toThrow();
+    expect(() => validateBasis(0, "met", "hunch")).toThrow(/basis must be one of admission, undisputed, evidence/);
+    expect(() => validateBasis(0, "met", undefined)).toThrow(/basis must be one of/);
   });
 });
 

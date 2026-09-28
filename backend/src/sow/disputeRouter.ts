@@ -5,7 +5,7 @@ import express, { type NextFunction, type Request, type Response, type Router } 
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { createPublicClient, http, parseAbi, parseAbiItem, type Hex } from "viem";
-import { loadSplitWasm, parseSow, verifyRuling, type AnyReasoning, type SplitWasm } from "@kernel-exploits/shared";
+import { hasCriteria, loadSplitWasm, parseSow, verifyRuling, type AnyReasoning, type Reasoning, type Sow, type SplitWasm } from "@kernel-exploits/shared";
 import { isAddress, isHttpUrl, requireEnv } from "./env";
 import { SowStore } from "./store";
 
@@ -36,6 +36,38 @@ export function createSettledReader(rpcUrl: string, escrowAddress: string, fromB
     const last = logs.at(-1);
     return last ? { toBuyer: last.args.toBuyer!, toSeller: last.args.toSeller! } : null;
   };
+}
+
+/** Flat per-criterion view for the resolution screen (v3/v4 rulings): text from the SOW, verdict, basis badge. */
+export type ResolutionRow = {
+  deliverableId: string;
+  index: number;
+  criterion: string;
+  verdict: string;
+  satisfied?: number;
+  total?: number;
+  basis?: "admission" | "undisputed" | "evidence"; // v4 only
+  rationale: string;
+  evidenceRefs: string[];
+};
+
+export function resolutionRows(reasoning: AnyReasoning, sow: Sow): ResolutionRow[] | undefined {
+  if (reasoning.source === "arbitrator") return undefined;
+  const scores = (reasoning as Reasoning).scores;
+  if (!scores.length || !scores.every(hasCriteria)) return undefined;
+  return scores.flatMap((s) =>
+    s.criteria.map((c) => ({
+      deliverableId: s.id,
+      index: c.index,
+      criterion: sow.deliverables.find((d) => d.id === s.id)?.acceptanceCriteria[c.index] ?? "",
+      verdict: c.verdict,
+      ...(c.satisfied !== undefined && { satisfied: c.satisfied }),
+      ...(c.total !== undefined && { total: c.total }),
+      ...(c.basis !== undefined && { basis: c.basis }),
+      rationale: c.rationale,
+      evidenceRefs: c.evidenceRefs,
+    })),
+  );
 }
 
 export function createDealReader(rpcUrl: string, escrowAddress: string): DealReader {
@@ -134,7 +166,8 @@ export function createDisputeRouter(deps: DisputeRouterDeps = {}): Router {
       wasm: await wasm,
     });
     const onchainOut = settled ? { ...onchain, settled: { toBuyer: settled.toBuyer.toString(), toSeller: settled.toSeller.toString() } } : onchain;
-    res.json({ dealId, source, verifiable: true, reasoning, sow, onchain: onchainOut, result });
+    const resolution = resolutionRows(reasoning, sow);
+    res.json({ dealId, source, verifiable: true, reasoning, sow, onchain: onchainOut, result, ...(resolution && { resolution }) });
   });
 
   router.use("/deals/:id/verify", (err: unknown, _req: Request, res: Response, _next: NextFunction) => {

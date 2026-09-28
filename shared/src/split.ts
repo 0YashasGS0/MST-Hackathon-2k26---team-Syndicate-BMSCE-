@@ -52,6 +52,23 @@ export function computeBuyerBps(deliverables: readonly WeightedDeliverable[], sc
 // ---- Criterion-level scoring (prompt v3): the LLM gives verdicts, the code computes percentages. ----
 
 export type Verdict = "met" | "partial" | "not_met";
+
+/**
+ * Prompt v4 burden-of-proof basis for a verdict:
+ *  - "admission":  the buyer/complaint says the criterion is satisfied        → verdict must be "met"
+ *  - "undisputed": the complaint doesn't dispute it and no evidence contradicts it → verdict must be "met"
+ *  - "evidence":   disputed, judged on the evidence                          → any verdict
+ */
+export type Basis = "admission" | "undisputed" | "evidence";
+export const BASES: readonly Basis[] = ["admission", "undisputed", "evidence"];
+
+/** Throws unless the basis is known and consistent with the verdict (admission/undisputed imply "met"). */
+export function validateBasis(index: number, verdict: Verdict, basis: unknown): void {
+  if (!BASES.includes(basis as Basis)) throw new Error(`criterion ${index}: basis must be one of ${BASES.join(", ")}`);
+  if ((basis === "admission" || basis === "undisputed") && verdict !== "met") {
+    throw new Error(`criterion ${index}: basis "${basis}" requires verdict "met" (got "${verdict}")`);
+  }
+}
 /** One acceptance criterion's verdict. `satisfied`/`total` are required for "partial" (countable criteria only). */
 export type CriterionVerdict = { index: number; verdict: Verdict; satisfied?: number; total?: number };
 

@@ -89,7 +89,11 @@ type DisputeScores = { scores: { id: string; fulfilledPct: number; rationale: st
 // v3 (AGENT_PROMPT_VERSION=v3): the LLM outputs verdicts only; fulfilledPct is computed by code.
 //   criterion score: met 100 | not_met 0 | partial floor(100 × satisfied / total)   (shared/src/split.ts criterionScore)
 //   fulfilledPct    = floor(mean of criterion scores)                               (fulfilledFromCriteria; also in split.wasm)
+// v4 (AGENT_PROMPT_VERSION=v4, default): every criterion also carries a burden-of-proof basis —
+//   "admission" (buyer says it's satisfied) and "undisputed" (not disputed, nothing contradicts it) ⇒ verdict must be "met";
+//   "evidence" (disputed, judged on evidence) ⇒ any verdict. Absent on v3 rulings.
 type CriterionResult = { index: number; verdict: "met" | "partial" | "not_met"; satisfied?: number; total?: number; // counts required for partial
+  basis?: "admission" | "undisputed" | "evidence";
   rationale: string; evidenceRefs: string[] };
 type CriteriaScore = { id: string; fulfilledPct: number; criteria: CriterionResult[] }; // criteria sorted by index, one per SOW acceptance criterion
 
@@ -117,8 +121,13 @@ type VerifyResult = {
 
 type Onchain = { reasoningHash: string; proposedBuyerBps: number; status: Deal["status"] | "None";
   settled?: { toBuyer: string; toSeller: string } }; // from the Settled event, only when status is "Resolved"
+// One row per acceptance criterion; `criterion` is the SOW text, `basis` is the v4 badge.
+type ResolutionRow = { deliverableId: string; index: number; criterion: string; verdict: "met" | "partial" | "not_met";
+  satisfied?: number; total?: number; basis?: "admission" | "undisputed" | "evidence"; rationale: string; evidenceRefs: string[] };
+
 type VerifyResponse =
-  | { dealId: number; source: "agent" | "arbitrator"; verifiable: true; reasoning: Reasoning | ArbitratorReasoning; sow: SOW; onchain: Onchain; result: VerifyResult }
+  | { dealId: number; source: "agent" | "arbitrator"; verifiable: true; reasoning: Reasoning | ArbitratorReasoning; sow: SOW; onchain: Onchain; result: VerifyResult;
+      resolution?: ResolutionRow[] } // v3/v4 agent rulings: flat per-criterion rows for the resolution screen
   | { dealId: number; source: "agent" | "arbitrator"; verifiable: false; reason: string; reasoning: Reasoning | ArbitratorReasoning; onchain: Onchain } // no linked SOW
   | { dealId: number; source: "arbitrator-or-unknown"; verifiable: false; onchain: Onchain }; // hash not in dispute_rulings
 ```

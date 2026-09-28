@@ -187,3 +187,29 @@ describe("verifyRuling — v3 criterion-level rulings", () => {
   });
 });
 
+describe("verifyRuling — v4 rulings (basis per criterion)", () => {
+  const v4scores: CriteriaScore[] = [
+    { id: "D1", fulfilledPct: 100, criteria: [{ index: 0, verdict: "met", basis: "admission", rationale: "buyer: homepage is fine", evidenceRefs: [] }] },
+    { id: "D2", fulfilledPct: 60, criteria: [{ index: 0, verdict: "partial", satisfied: 12, total: 20, basis: "evidence", rationale: "12 of 20", evidenceRefs: ["E2"] }] },
+    { id: "D3", fulfilledPct: 0, criteria: [{ index: 0, verdict: "not_met", basis: "evidence", rationale: "no email", evidenceRefs: ["E3"] }] },
+  ];
+  const v4: Reasoning = { ...reasoning, scores: v4scores, buyerBps: computeBuyerBps(sow.deliverables, v4scores), promptVersion: "v4" };
+
+  it("a clean v4 ruling verifies (TS + WASM)", () => {
+    expect(verifyRuling({ reasoning: v4, onchainReasoningHash: hashJson(v4), onchainProposedBps: v4.buyerBps, sow, wasm })).toMatchObject({ ok: true, fulfilledMatches: true, wasmMatchesTs: true });
+  });
+
+  it("a basis that contradicts its verdict fails fulfilledMatches, even with a recomputed hash", () => {
+    const t = structuredClone(v4);
+    (t.scores[2] as CriteriaScore).criteria[0].basis = "undisputed"; // undisputed ⇒ must be met, but verdict is not_met
+    expect(verifyRuling({ reasoning: t, onchainReasoningHash: hashJson(t), sow })).toMatchObject({ hashMatches: true, fulfilledMatches: false, ok: false });
+  });
+
+  it("v3 rulings (no basis) still verify", () => {
+    const v3 = structuredClone(v4);
+    for (const s of v3.scores as CriteriaScore[]) for (const c of s.criteria) delete c.basis;
+    v3.promptVersion = "v3";
+    expect(verifyRuling({ reasoning: v3, onchainReasoningHash: hashJson(v3), sow })).toMatchObject({ ok: true, fulfilledMatches: true });
+  });
+});
+

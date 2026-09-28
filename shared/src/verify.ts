@@ -2,7 +2,7 @@
 // Recomputes reasoningHash and the split from the stored reasoning object + SOW, and compares with the chain.
 import { hashJson, hashSow } from "./hash";
 import type { Sow } from "./sow";
-import { computeBuyerBps, fulfilledFromCriteria, type Verdict } from "./split";
+import { computeBuyerBps, fulfilledFromCriteria, validateBasis, type Basis, type Verdict } from "./split";
 import type { SplitWasm } from "./splitWasm";
 
 /** One criterion verdict as stored in a v3 ruling (the LLM's output, plus nothing computed). */
@@ -11,6 +11,8 @@ export type CriterionResult = {
   verdict: Verdict;
   satisfied?: number;
   total?: number;
+  /** v4 only: why the verdict was reached (admission / undisputed ⇒ met). Absent on v3 rulings. */
+  basis?: Basis;
   rationale: string;
   evidenceRefs: string[];
 };
@@ -70,7 +72,7 @@ export type VerifyResult = {
   hashMatches: boolean; // hashJson(reasoning) === on-chain reasoningHash
   bpsMatchesFormula: boolean | null; // agent: reasoning.buyerBps === computeBuyerBps(sow, scores); arbitrator: null (a human decided)
   bpsMatchesOnchain: boolean | null; // agent: reasoning.buyerBps === on-chain proposedBuyerBps (null: not supplied); arbitrator: null
-  fulfilledMatches: boolean | null; // v3: every fulfilledPct === fulfilledFromCriteria(verdicts); null for v1/v2 and arbitrator
+  fulfilledMatches: boolean | null; // v3/v4: every fulfilledPct === fulfilledFromCriteria(verdicts) and every verdict is well-formed (v4: basis rules); null for v1/v2 and arbitrator
   settledMatches: boolean | null; // floor(amount × buyerBps / 10000) === Settled.toBuyer (null: no settlement supplied)
   wasmMatchesTs: boolean | null; // WASM formula === TS formula (null: no wasm supplied, or arbitrator)
   sowMatches: boolean; // reasoning.sowHash === hashSow(sow)
@@ -99,6 +101,7 @@ export function verifyRuling({ reasoning, onchainReasoningHash, onchainProposedB
         const d = sow.deliverables.find((x) => x.id === s.id);
         if (!d || !hasCriteria(s)) return false;
         try {
+          for (const c of s.criteria) if (c.basis !== undefined) validateBasis(c.index, c.verdict, c.basis);
           const pct = fulfilledFromCriteria(s.criteria, d.acceptanceCriteria.length);
           if (wasm && wasm.fulfilledFromCriteria(s.criteria, d.acceptanceCriteria.length) !== pct) wasmMatchesTs = false;
           return pct === s.fulfilledPct;

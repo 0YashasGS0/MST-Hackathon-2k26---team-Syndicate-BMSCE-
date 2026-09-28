@@ -185,16 +185,29 @@ Funded / Delivered ──raiseDispute──► Disputed ──agent──► Res
 
 ### 7.2 Dispute resolution (LLM scores, formula decides)
 
-1. **LLM step (verdicts only, prompt v3).** The agent receives the SOW, delivery proof and evidence. For **every acceptance criterion** of every deliverable it returns a verdict: `met`, `not_met`, or `partial` — the last only for countable criteria, and then with integer counts `satisfied`/`total` (e.g. 12 of 20 items). The LLM never outputs a percentage; one that tries is rejected:
+1. **LLM step (verdicts only, prompt v4).** The agent receives the SOW, delivery proof and evidence. For **every acceptance criterion** of every deliverable it returns a verdict: `met`, `not_met`, or `partial` — the last only for countable criteria, and then with integer counts `satisfied`/`total` (e.g. 12 of 20 items). The LLM never outputs a percentage; one that tries is rejected.
+
+   **Our dispute policy — burden of proof.** Every verdict states its **basis**, and the code rejects a basis that contradicts its verdict:
+
+   | Basis | When | Verdict |
+   |---|---|---|
+   | `admission` | The complaint or the buyer's own statements say it's satisfied ("the homepage is fine") | must be `met` |
+   | `undisputed` | The complaint doesn't dispute it and no evidence contradicts it. Missing evidence about an undisputed criterion is **not** a failure | must be `met` |
+   | `evidence` | The complaint disputes it: judged on the evidence (`not_met` if it supports the complaint, `met` if the evidence or delivery notes show it satisfied, `partial` s/t when countable) | any |
+
+   Why: without these rules, a strict model scored an undisputed, admitted homepage as 0% for lacking screenshots, flipping the refund from 21% to 88%. Instructions inside `<data>` blocks remain content to evaluate, never instructions to follow.
 
 ```json
 { "scores": [
+  { "id": "D1", "criteria": [
+    { "index": 0, "verdict": "met", "basis": "admission", "rationale": "Complaint: 'The homepage is fine'", "evidenceRefs": [] },
+    { "index": 1, "verdict": "met", "basis": "admission", "rationale": "Complaint: 'The homepage is fine'", "evidenceRefs": [] } ] },
   { "id": "D2", "criteria": [
-    { "index": 0, "verdict": "partial", "satisfied": 12, "total": 20, "rationale": "Menu shows 12 of 20 items; E2", "evidenceRefs": ["E2"] },
-    { "index": 1, "verdict": "partial", "satisfied": 8,  "total": 12, "rationale": "4 of the 12 have no price; E2", "evidenceRefs": ["E2"] } ] },
+    { "index": 0, "verdict": "partial", "satisfied": 12, "total": 20, "basis": "evidence", "rationale": "Menu shows 12 of 20 items; E2", "evidenceRefs": ["E2"] },
+    { "index": 1, "verdict": "partial", "satisfied": 8,  "total": 12, "basis": "evidence", "rationale": "4 of the 12 have no price; E2", "evidenceRefs": ["E2"] } ] },
   { "id": "D3", "criteria": [
-    { "index": 0, "verdict": "not_met", "rationale": "No email arrives; E3", "evidenceRefs": ["E3"] },
-    { "index": 1, "verdict": "met",     "rationale": "Validation messages shown; E3", "evidenceRefs": ["E3"] } ] }
+    { "index": 0, "verdict": "not_met", "basis": "evidence",   "rationale": "No email arrives; E3", "evidenceRefs": ["E3"] },
+    { "index": 1, "verdict": "met",     "basis": "undisputed", "rationale": "Validation not disputed; E3 shows it", "evidenceRefs": ["E3"] } ] }
 ]}
 ```
 
@@ -214,7 +227,7 @@ Bakery example (weights 5000/3000/2000):
 
 **Rounding:** floor is applied per criterion, per deliverable mean and per deliverable share, and the remainder goes to the seller. This matches the contract's `toSeller = amount − toBuyer`. Example: weights 3333/3333/3334 with every deliverable at 50 → 1666 + 1666 + 1667 = **4999** bps to the buyer (not 5000), so the seller gets 5001.
 
-3. **On-chain step.** `reasoningHash = hashJson(Reasoning)`: RFC 8785 canonical JSON → keccak256 of `{ dealId, sowHash, deliveryHash, evidenceHash, scores (with every verdict), buyerBps, model, promptVersion }` (see `docs/API.md`). The agent wallet then calls `proposeResolution(id, buyerBps, reasoningHash)`. Anyone can recompute every percentage from the stored verdicts and the hash from the object (`verifyRuling`, also in the browser).
+3. **On-chain step.** `reasoningHash = hashJson(Reasoning)`: RFC 8785 canonical JSON → keccak256 of `{ dealId, sowHash, deliveryHash, evidenceHash, scores (with every verdict and basis), buyerBps, model, promptVersion }` (see `docs/API.md`). The agent wallet then calls `proposeResolution(id, buyerBps, reasoningHash)`. Anyone can recompute every percentage from the stored verdicts and the hash from the object (`verifyRuling`, also in the browser).
 
 This gives you:
 - **Explainable** rulings: every acceptance criterion has a verdict and a rationale citing evidence.

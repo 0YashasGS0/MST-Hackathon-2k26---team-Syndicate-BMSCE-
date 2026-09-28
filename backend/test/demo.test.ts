@@ -198,7 +198,7 @@ describe("prompt versions", () => {
 
   it("an unknown version fails clearly", async () => {
     await expect(scoreDispute(input, { llm: scenarioMock(good).client, store: new SowStore(":memory:"), demoFallback: false, promptVersion: "v9" })).rejects.toThrow(
-      'unknown AGENT_PROMPT_VERSION "v9" (available: v1, v2, v3)',
+      'unknown AGENT_PROMPT_VERSION "v9" (available: v1, v2, v3, v4)',
     );
   });
 });

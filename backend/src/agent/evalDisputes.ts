@@ -50,7 +50,8 @@ export type EvalSummary = {
   max: number | null;
   spread: number | null;
   median: number | null;
-  agreement: { agree: number; total: number } | null; // summed over valid v3 runs
+  agreement: { agree: number; total: number } | null; // summed over valid v3/v4 runs
+  basisMix: { admission: number; undisputed: number; evidence: number } | null; // v4 verdict bases over valid runs
   relative?: { baseline: string; delta: number | null; maxDeltaBps: number; ok: boolean | null };
 };
 
@@ -220,11 +221,25 @@ export function summarize(scenarios: Scenario[], rows: EvalRow[], relativeChecks
     const agreed = mine.map((r) => r.agreement).filter((a): a is { agree: number; total: number } => a !== null);
     const agreement = agreed.length ? agreed.reduce((t, a) => ({ agree: t.agree + a.agree, total: t.total + a.total }), { agree: 0, total: 0 }) : null;
 
+    const mix = { admission: 0, undisputed: 0, evidence: 0 };
+    let sawBasis = false;
+    for (const r of mine) {
+      for (const s of r.scores) {
+        if (!hasCriteria(s)) continue;
+        for (const c of s.criteria) {
+          if (!c.basis) continue;
+          mix[c.basis]++;
+          sawBasis = true;
+        }
+      }
+    }
+
     return {
       scenario: sc.id,
       name: sc.name,
       status,
       agreement,
+      basisMix: sawBasis ? mix : null,
       pass: status === "PASS",
       runs: mine.length,
       validRuns: valid.length,
@@ -298,6 +313,7 @@ export function formatSummary(s: EvalSummary): string[] {
     `${s.scenario} ${s.name.padEnd(18)} valid runs: ${s.validRuns}/${s.runs}  min=${s.min ?? "-"} max=${s.max ?? "-"} spread=${s.spread ?? "-"} median=${s.median ?? "-"}  ${s.status}`,
   ];
   if (s.agreement) lines.push(`    criteria agreement ${s.agreement.agree}/${s.agreement.total}`);
+  if (s.basisMix) lines.push(`    basis mix: ${fmtMix(s.basisMix)}`);
   if (s.relative) {
     const r = s.relative;
     lines.push(
@@ -308,3 +324,43 @@ export function formatSummary(s: EvalSummary): string[] {
   }
   return lines;
 }
+
+const fmtMix = (m: { admission: number; undisputed: number; evidence: number }) => `admission ${m.admission} · undisputed ${m.undisputed} · evidence ${m.evidence}`;
+
+/** EVAL_COMPARE="groq:openai/gpt-oss-120b;gemini:gemini-2.5-flash" → one chain spec per entry (each may itself be a comma chain). */
+export function parseEvalCompare(spec: string): string[] {
+  return spec.split(";").map((s) => s.trim()).filter(Boolean);
+}
+
+export type CompareResult = { chain: string; summary: EvalSummary[]; rows: EvalRow[]; skipped?: string };
+
+/** Side-by-side table: scenario | model | bps | in range | criteria agreement | basis mix. */
+export function formatCompareTable(results: CompareResult[]): string[] {
+  const header = ["scenario".padEnd(20), "model".padEnd(34), "bps (median; runs)".padEnd(26), "in range".padEnd(10), "agreement".padEnd(10), "basis mix"].join(" | ");
+  const lines = [header, "-".repeat(header.length)];
+  const ids = [...new Set(results.flatMap((r) => r.summary.map((s) => s.scenario)))];
+  for (const id of ids) {
+    for (const r of results) {
+      if (r.skipped) {
+        lines.push([`${id}`.padEnd(20), r.chain.padEnd(34), `skipped: ${r.skipped}`].join(" | "));
+        continue;
+      }
+      const s = r.summary.find((x) => x.scenario === id);
+      if (!s) continue;
+      const bps = r.rows.filter((x) => x.scenario === id).map((x) => x.buyerBps ?? "ERR");
+      const models = [...new Set(r.rows.filter((x) => x.scenario === id && x.buyerBps !== null).map((x) => x.model))];
+      lines.push(
+        [
+          `${s.scenario} ${s.name}`.padEnd(20),
+          (models.length ? models.join(", ") : r.chain).padEnd(34),
+          `${s.median ?? "-"} (${bps.join(", ")})`.padEnd(26),
+          s.status.padEnd(10),
+          (s.agreement ? `${s.agreement.agree}/${s.agreement.total}` : "-").padEnd(10),
+          s.basisMix ? fmtMix(s.basisMix) : "-",
+        ].join(" | "),
+      );
+    }
+  }
+  return lines;
+}
+
