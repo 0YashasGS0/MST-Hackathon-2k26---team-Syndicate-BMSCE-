@@ -54,8 +54,12 @@ export const api = {
   // ---- negotiation / SOW (B2) ----
   createDraft: (d: { seller: string; purpose: string; price: string; buyerConstraints: string }) =>
     call<Draft>("createDraft", () => http("POST", "/deals", d), () => mock.createDraft(d)),
+  listDrafts: (address: Address) =>
+    call<Draft[]>("listDrafts", () => http("GET", `/drafts?address=${address}`), () => mock.listDrafts(address)),
   getDraft: (draftId: string) =>
     call<Draft>("getDraft", () => http("GET", `/drafts/${draftId}`), () => mock.getDraft(draftId)),
+  getSow: (draftId: string) =>
+    call<SowVersion | null>("getSow", () => http("GET", `/deals/${draftId}/sow`), () => mock.getSow(draftId)),
   sellerInput: (draftId: string, sellerPoints: string) =>
     call<Draft>(
       "sellerInput",
@@ -91,6 +95,8 @@ export const api = {
   // ---- disputes (B1 + B2) ----
   resolve: (id: string) =>
     call<Resolution>("resolve", () => http("POST", `/deals/${id}/resolve`), () => mock.resolve(id)),
+  getResolution: (id: string) =>
+    call<Resolution>("getResolution", () => http("GET", `/deals/${id}/resolution`), () => mock.getResolution(id)),
   verify: (id: string) =>
     call<VerifyResult>("verify", () => http("GET", `/deals/${id}/verify`), () => mock.verify(id)),
   arbitrate: (id: string, buyerBps: number, adminToken: string) =>

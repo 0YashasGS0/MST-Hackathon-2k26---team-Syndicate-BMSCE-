@@ -1,37 +1,41 @@
-import Link from "next/link";
-import { api } from "@/lib/api";
-import { mst } from "@/lib/chain";
-import { ESCROW_ADDRESS } from "@/lib/contracts";
-import { fmtUsd, shortHex, txUrl } from "@/lib/format";
+import { ButtonLink, Card } from "@/components/ui";
 
-// Temporary scaffold check page: proves chain config + mocked API wiring. Replaced by the dashboard.
-export default async function Home() {
-  const deals = await api.listDeals("0x1111111111111111111111111111111111111111");
+const steps = [
+  { n: 1, title: "Agree", body: "Buyer and seller state their terms. AI merges them into a weighted SOW; both commit the same hash on MST." },
+  { n: 2, title: "Fund", body: "Pay with UPI. Stablecoin is minted and locked in the escrow contract — not in anyone's wallet." },
+  { n: 3, title: "Deliver", body: "Seller delivers and marks it on-chain. Buyer releases, or the timeout pays the seller." },
+  { n: 4, title: "Resolve", body: "On dispute, AI scores each deliverable, a fixed formula computes the split, and the parties accept or escalate." },
+];
 
+export default function Home() {
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">Escrow — FE scaffold</h1>
-      <p className="mt-1 text-sm text-zinc-500">
-        {mst.name} · chain {mst.id} · explorer {mst.blockExplorers.default.url} · escrow{" "}
-        {ESCROW_ADDRESS ?? "not deployed yet"}
-      </p>
+    <div className="space-y-12">
+      <section className="py-10 text-center">
+        <p className="text-sm font-medium text-accent">Escrow on MST Blockchain</p>
+        <h1 className="mx-auto mt-3 max-w-2xl text-4xl font-semibold tracking-tight sm:text-5xl">
+          Pay for work with a witness that can&apos;t be bribed.
+        </h1>
+        <p className="mx-auto mt-4 max-w-xl text-muted">
+          The AI can only propose. Money moves only by buyer release, mutual agreement, timeout, or an arbitrator&apos;s
+          ruling — enforced by the contract.
+        </p>
+        <div className="mt-8 flex justify-center gap-3">
+          <ButtonLink href="/login">Get started</ButtonLink>
+          <ButtonLink href="/dashboard" variant="secondary">
+            Open dashboard
+          </ButtonLink>
+        </div>
+      </section>
 
-      <h2 className="mt-8 text-lg font-medium">Deals (mock API)</h2>
-      <ul className="mt-3 divide-y divide-zinc-200 rounded border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-        {deals.map((d) => (
-          <li key={d.id} className="flex items-center justify-between gap-4 p-3 text-sm">
-            <span>
-              #{d.id} {d.title} · {fmtUsd(d.amount)} mUSD
-            </span>
-            <span className="flex items-center gap-3">
-              <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs dark:bg-zinc-800">{d.status}</span>
-              <Link className="text-blue-600 hover:underline" href={txUrl(d.events[0].txHash)} target="_blank">
-                {shortHex(d.events[0].txHash)} ↗
-              </Link>
-            </span>
-          </li>
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {steps.map((s) => (
+          <Card key={s.n}>
+            <div className="grid h-8 w-8 place-items-center rounded-full bg-accent/15 text-sm font-semibold text-accent">{s.n}</div>
+            <h3 className="mt-3 font-semibold">{s.title}</h3>
+            <p className="mt-1 text-sm text-muted">{s.body}</p>
+          </Card>
         ))}
-      </ul>
-    </main>
+      </section>
+    </div>
   );
 }

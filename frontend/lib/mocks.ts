@@ -121,7 +121,64 @@ const deals: Deal[] = [
       ev("ResolutionProposed", 9, now() - 11 * HOUR, { buyerBps: "3500" }),
     ],
   },
+  {
+    id: "3",
+    draftId: "draft-3",
+    title: "Product photos (20 shots)",
+    buyer: BUYER,
+    seller: SELLER,
+    amount: "30000000",
+    status: "Delivered",
+    sowHash: fakeHash("sow-3"),
+    deliverBy: now() + DAY,
+    reviewPeriod: 2 * DAY,
+    deliveredAt: now() - 6 * HOUR,
+    deliveryHash: fakeHash("delivery-3"),
+    events: [
+      ev("DealProposed", 10, t0, { amount: "30000000" }),
+      ev("DealAccepted", 11, t0 + HOUR, {}),
+      ev("DealFunded", 12, t0 + 2 * HOUR, { amount: "30000000" }),
+      ev("Delivered", 13, now() - 6 * HOUR, { deliveryHash: fakeHash("delivery-3") }),
+    ],
+  },
+  {
+    id: "4",
+    draftId: "draft-4",
+    title: "Mobile app bug fixes",
+    buyer: BUYER,
+    seller: SELLER,
+    amount: "80000000",
+    status: "Escalated",
+    sowHash: fakeHash("sow-4"),
+    deliverBy: now() - 2 * DAY,
+    reviewPeriod: 2 * DAY,
+    deliveredAt: now() - 2 * DAY,
+    deliveryHash: fakeHash("delivery-4"),
+    evidenceHash: fakeHash("evidence-4"),
+    buyerBps: 6000,
+    reasoningHash: fakeHash("reasoning-4"),
+    events: [
+      ev("DealProposed", 14, t0, { amount: "80000000" }),
+      ev("DealAccepted", 15, t0 + HOUR, {}),
+      ev("DealFunded", 16, t0 + 2 * HOUR, { amount: "80000000" }),
+      ev("Delivered", 17, now() - 2 * DAY, { deliveryHash: fakeHash("delivery-4") }),
+      ev("DisputeRaised", 18, now() - DAY, { evidenceHash: fakeHash("evidence-4") }),
+      ev("ResolutionProposed", 19, now() - 23 * HOUR, { buyerBps: "6000" }),
+      ev("Escalated", 20, now() - 20 * HOUR, { by: SELLER }),
+    ],
+  },
 ];
+
+drafts.set("draft-demo", {
+  id: "draft-demo",
+  buyer: BUYER,
+  seller: SELLER,
+  purpose: "Landing page for bakery",
+  price: "100000000",
+  buyerConstraints: "Must work on mobile. Done within 5 days. Include an order form.",
+  sellerPoints: "Needs 10 days. Hosting not included; buyer provides domain.",
+  status: "ready_to_merge",
+});
 
 // ---- auth / KYC ----
 export async function login(address: Address): Promise<User> {
@@ -156,6 +213,15 @@ export async function createDraft(d: { seller: string; purpose: string; price: s
   };
   drafts.set(draft.id, draft);
   return draft;
+}
+export async function listDrafts(address: Address): Promise<Draft[]> {
+  await delay();
+  void address;
+  return [...drafts.values()];
+}
+export async function getSow(draftId: string): Promise<SowVersion | null> {
+  await delay();
+  return sowVersions.get(draftId) ?? null;
 }
 export async function getDraft(draftId: string): Promise<Draft> {
   await delay();
@@ -250,6 +316,11 @@ const demoScores = [
 export async function resolve(id: string): Promise<Resolution> {
   await delay(1500);
   return { scores: demoScores, buyerBps: 3500, reasoningHash: fakeHash(`reasoning-${id}`), txHash: fakeHash(`resolve-${id}`) };
+}
+export async function getResolution(id: string): Promise<Resolution> {
+  await delay();
+  const d = await getDeal(id);
+  return { scores: demoScores, buyerBps: d.buyerBps ?? 3500, reasoningHash: d.reasoningHash ?? fakeHash(`reasoning-${id}`) };
 }
 export async function verify(id: string): Promise<VerifyResult> {
   await delay();

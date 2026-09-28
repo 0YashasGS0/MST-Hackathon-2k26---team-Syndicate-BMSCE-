@@ -2,6 +2,12 @@
 
 Newest first.
 
+## 2026-09-29 — UI skeleton for every screen (mocked)
+- **Done:** layout (header nav, wallet button, MST network badge, footer), design tokens in `globals.css` (light/dark), shared UI kit `components/ui.tsx`. Screens: landing `/`, `/login` (MetaMask real if installed, else mock buyer; SARAL button placeholder), `/kyc`, `/dashboard` (buyer/seller/negotiation tabs + stats), `/deals/new`, `/drafts/[draftId]` (SOW workspace: seller points, AI merge, conflicts, weights, approvals), `/deals/[id]` (tracker: escrow balance, on-chain timeline with explorer links, status-driven next-step actions), `/deals/[id]/pay` (mock UPI), `/deals/[id]/dispute`, `/deals/[id]/resolution` (scores, split, accept/escalate), `/deals/[id]/verify`, `/arbitrator` (queue, reasoning, split slider). Buyer/Seller "view as" toggle for demoing with one browser. All routes return 200; unknown deal → 404.
+- **Not wired:** every contract call (`proposeDeal`, `acceptDeal`, `markDelivered`, `release`, `raiseDispute`, `acceptResolution`, `escalate`, `claimTimeout`) shows an alert until the ABI lands; browser SOW-hash check and in-browser verify are placeholders.
+- **Added endpoint guesses:** `GET /drafts?address=`, `GET /deals/:draftId/sow`, `GET /deals/:id/resolution`.
+- **Next:** wait for user's UI feedback, then wire contract calls once ABI is available.
+
 ## 2026-09-29 — Hour 0–1: Next.js scaffold with mocked API
 - **Done:** `frontend/` — Next.js 16 (App Router) + Tailwind 4 + viem. `lib/chain.ts` (MST `defineChain`, id 91562037), `lib/contracts.ts` (addresses from env, ABI placeholders), `lib/types.ts` (API shapes), `lib/api.ts` (typed client, every endpoint mocked; switch live per endpoint via `NEXT_PUBLIC_LIVE_ENDPOINTS`), `lib/mocks.ts` (in-memory fake backend), `lib/format.ts` (`txUrl`, `addressUrl`, `fmtUsd`, `fmtBps`). `frontend/.env.example`. Typecheck, lint and `next build` pass.
 - **Decisions:** TS target raised to ES2020 (bigint for viem). SOW type mirrors B2's `sow/v1` draft (`yashas` branch), not the roadmap's JSON sketch — to be replaced by an import from `shared/` once it's on main. No wagmi yet; plain viem.
