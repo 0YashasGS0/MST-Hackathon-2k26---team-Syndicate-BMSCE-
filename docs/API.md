@@ -35,7 +35,7 @@
 | POST | `/deals/:id/evidence` | B1 | multipart `files[]`, `complaint` → `{ hash }` |
 | POST | `/deals/:id/resolve` | B1 (calls B2) | — → `{ scores, buyerBps, reasoningHash, txHash }` |
 | POST | `/deals/:id/timeout` | B1 | — → `{ txHash }` |
-| GET | `/deals/:id/verify` | B2 | → `{ reasoning, recomputedBps, recomputedHash, onchainHash, match }` |
+| GET | `/deals/:id/verify` | B2 | → `VerifyResponse` (below). Reads `getDeal(id)` on MST. 404 `NoRuling` when there's no `reasoningHash` on-chain yet; 404 `NotFound` for an unknown deal; 400 for a bad id; 502 `ChainUnavailable`. Mounted via `createDisputeRouter()` |
 | POST | `/arbitrator/deals/:id/rule` | B1 | header `x-admin-token`, `{ buyerBps, ruling }` → `{ txHash }` |
 
 ## Payments
@@ -90,4 +90,19 @@ type DisputeScores = { scores: { id: string; fulfilledPct: number; rationale: st
 // buyerBps = computeBuyerBps(sow.deliverables, scores) (shared/src/split.ts). Scores are in SOW deliverable order; hashes lowercase.
 type Reasoning = { dealId: number; sowHash: string; deliveryHash: string; evidenceHash: string;
   scores: DisputeScores["scores"]; buyerBps: number; model: string; promptVersion: string };
+
+// shared/src/verify.ts verifyRuling() — run it in the browser too (with split.wasm, on-chain hash read from MST directly).
+type VerifyResult = {
+  hashMatches: boolean;              // hashJson(reasoning) === on-chain reasoningHash
+  bpsMatchesFormula: boolean;        // reasoning.buyerBps === computeBuyerBps(sow.deliverables, scores)
+  bpsMatchesOnchain: boolean | null; // reasoning.buyerBps === on-chain proposedBuyerBps (null if not supplied)
+  wasmMatchesTs: boolean | null;     // split.wasm result === split.ts result (null if no wasm)
+  sowMatches: boolean;               // reasoning.sowHash === hashSow(sow)
+  recomputedHash: string; recomputedBps: number | null; ok: boolean };
+
+type Onchain = { reasoningHash: string; proposedBuyerBps: number; status: Deal["status"] | "None" };
+type VerifyResponse =
+  | { dealId: number; source: "agent"; verifiable: true; reasoning: Reasoning; sow: SOW; onchain: Onchain; result: VerifyResult }
+  | { dealId: number; source: "agent"; verifiable: false; reason: string; reasoning: Reasoning; onchain: Onchain } // no linked SOW
+  | { dealId: number; source: "arbitrator-or-unknown"; verifiable: false; onchain: Onchain }; // hash not in dispute_rulings
 ```

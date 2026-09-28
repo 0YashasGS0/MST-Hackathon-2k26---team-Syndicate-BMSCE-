@@ -1,1 +1,4 @@
 node_modules/
+# dist/split.wasm is intentionally TRACKED: the browser verify page loads it. Rebuild with `npm run build:wasm`.
+# (the root .gitignore ignores dist/, so re-include it here)
+!dist/

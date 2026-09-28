@@ -6,6 +6,7 @@ import { createLlmChain } from "../agent/createLlmClient";
 import type { LlmChain } from "../agent/toolRetry";
 import { LlmUnavailableError, MERGE_PROMPT_VERSION, SowMergeError, mergeSow } from "../agent/mergeSow";
 import { getCaller } from "./auth";
+import { ADDRESS_RE, isAddress, isHttpUrl, requireEnv as requireEnvFor } from "./env";
 import { SowStore, type Draft } from "./store";
 import { createLinkVerifier, type LinkVerifier } from "./verifyLink";
 
@@ -19,7 +20,6 @@ export type SowRouterDeps = {
   now?: () => number; // unix seconds; injectable for tests
 };
 
-const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const address = z
   .string()
   .regex(ADDRESS_RE, "must be a 0x-prefixed 20-byte address")
@@ -68,19 +68,15 @@ class HttpError extends Error {
 }
 
 /** Throws at construction (not at request time) if required config is missing. */
-function requireEnv(name: string, value: string | undefined, valid: (v: string) => boolean): string {
-  if (!value) throw new Error(`createSowRouter: missing required env ${name}`);
-  if (!valid(value)) throw new Error(`createSowRouter: env ${name} is invalid`);
-  return value;
-}
+const requireEnv = (name: string, value: string | undefined, valid: (v: string) => boolean) => requireEnvFor("createSowRouter", name, value, valid);
 
 export function createSowRouter(deps: SowRouterDeps = {}): Router {
-  const usdAddress = requireEnv("USD_ADDRESS", deps.usdAddress ?? process.env.USD_ADDRESS, (v) => ADDRESS_RE.test(v)).toLowerCase();
+  const usdAddress = requireEnv("USD_ADDRESS", deps.usdAddress ?? process.env.USD_ADDRESS, isAddress).toLowerCase();
   const verifyLink =
     deps.verifyLink ??
     createLinkVerifier({
-      rpcUrl: requireEnv("MST_RPC_URL", process.env.MST_RPC_URL, (v) => /^https?:\/\//.test(v)),
-      escrowAddress: requireEnv("ESCROW_ADDRESS", process.env.ESCROW_ADDRESS, (v) => ADDRESS_RE.test(v)),
+      rpcUrl: requireEnv("MST_RPC_URL", process.env.MST_RPC_URL, isHttpUrl),
+      escrowAddress: requireEnv("ESCROW_ADDRESS", process.env.ESCROW_ADDRESS, isAddress),
     });
   const store = deps.store ?? new SowStore();
   const llm = deps.llm ?? createLlmChain(); // throws at startup on bad LLM_PROVIDER / missing gemini LLM_MODEL

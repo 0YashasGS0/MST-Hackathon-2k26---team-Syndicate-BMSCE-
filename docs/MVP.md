@@ -202,6 +202,8 @@ buyerBps = Σ floor(weightBps_i × (100 − fulfilledPct_i) / 100)
          = 5000×0/100 + 3000×50/100 + 2000×100/100 = 0 + 1500 + 2000 = 3500  → 35% refund to buyer, 65% to seller
 ```
 
+**Rounding:** floor is applied per deliverable, and the remainder (at most 1 bps per deliverable) goes to the seller. This matches the contract's `toSeller = amount − toBuyer`. Example: weights 3333/3333/3334 with every score at 50 → 1666 + 1666 + 1667 = **4999** bps to the buyer (not 5000), so the seller gets 5001.
+
 3. **On-chain step.** `reasoningHash = keccak256(canonicalJSON({ scores, buyerBps, model, promptVersion, inputsHash }))`. The agent wallet then calls `proposeResolution(id, buyerBps, reasoningHash)`.
 
 This gives you:

@@ -1,7 +1,7 @@
 // Dispute scorer: the LLM scores each SOW deliverable (integer 0-100); the split comes ONLY from computeBuyerBps.
 // B1's /deals/:id/resolve calls scoreDispute() and then proposeResolution(id, buyerBps, reasoningHash).
 import { z } from "zod";
-import { computeBuyerBps, hashJson, hashSow, parseSow, type Sow } from "@kernel-exploits/shared";
+import { computeBuyerBps, hashJson, hashSow, parseSow, type Reasoning, type RulingScore, type Sow } from "@kernel-exploits/shared";
 import { SowStore } from "../sow/store";
 import type { ToolDef } from "./llm";
 import type { BackoffOptions } from "./resilience";
@@ -20,19 +20,9 @@ export type DisputeInput = {
   evidenceNotes: string;
 };
 
-export type Score = { id: string; fulfilledPct: number; rationale: string; evidenceRefs: string[] };
-
-/** Exactly what reasoningHash commits to (and what /verify recomputes). */
-export type Reasoning = {
-  dealId: number;
-  sowHash: string;
-  deliveryHash: string;
-  evidenceHash: string;
-  scores: Score[];
-  buyerBps: number;
-  model: string;
-  promptVersion: string;
-};
+/** Exactly what reasoningHash commits to — defined once in shared (verifyRuling recomputes it). */
+export type { Reasoning } from "@kernel-exploits/shared";
+export type Score = RulingScore;
 
 export type Ruling = { scores: Score[]; buyerBps: number; reasoningHash: string; model: string; promptVersion: string };
 

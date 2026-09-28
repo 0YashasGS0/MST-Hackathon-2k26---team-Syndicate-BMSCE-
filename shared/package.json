@@ -6,7 +6,8 @@
   "main": "src/index.ts",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:wasm": "asc wasm/split.ts --outFile dist/split.wasm --optimize --runtime stub --use abort= --noAssert"
   },
   "dependencies": {
     "canonicalize": "^5.1.0",
@@ -15,6 +16,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
+    "assemblyscript": "^0.28.20",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   }

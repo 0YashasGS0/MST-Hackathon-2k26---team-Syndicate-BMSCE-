@@ -5,8 +5,15 @@ import { TOTAL_BPS } from "./sow";
 export type WeightedDeliverable = { id: string; weightBps: number };
 export type DeliverableScore = { id: string; fulfilledPct: number };
 
-/** Buyer's refund share in basis points (0..10000). Throws unless scores cover every deliverable exactly once. */
-export function computeBuyerBps(deliverables: readonly WeightedDeliverable[], scores: readonly DeliverableScore[]): number {
+/**
+ * Validates and orders the inputs (in deliverable order). Shared by the TS formula and the WASM wrapper.
+ * Throws unless weights are non-negative integers summing to 10000 and scores cover every deliverable exactly once
+ * with integer fulfilledPct 0–100.
+ */
+export function orderSplitInputs(
+  deliverables: readonly WeightedDeliverable[],
+  scores: readonly DeliverableScore[],
+): { weights: number[]; pcts: number[] } {
   let weightSum = 0;
   for (const d of deliverables) {
     if (!Number.isInteger(d.weightBps) || d.weightBps < 0) throw new Error(`deliverable ${d.id}: weightBps must be a non-negative integer`);
@@ -26,11 +33,18 @@ export function computeBuyerBps(deliverables: readonly WeightedDeliverable[], sc
   if (ids.size !== deliverables.length) throw new Error("deliverable ids must be unique");
   for (const id of byId.keys()) if (!ids.has(id)) throw new Error(`score for unknown deliverable ${id}`);
 
-  let bps = 0;
-  for (const d of deliverables) {
+  const pcts = deliverables.map((d) => {
     const pct = byId.get(d.id);
     if (pct === undefined) throw new Error(`missing score for deliverable ${d.id}`);
-    bps += Math.floor((d.weightBps * (100 - pct)) / 100);
-  }
+    return pct;
+  });
+  return { weights: deliverables.map((d) => d.weightBps), pcts };
+}
+
+/** Buyer's refund share in basis points (0..10000). Throws unless scores cover every deliverable exactly once. */
+export function computeBuyerBps(deliverables: readonly WeightedDeliverable[], scores: readonly DeliverableScore[]): number {
+  const { weights, pcts } = orderSplitInputs(deliverables, scores);
+  let bps = 0;
+  for (let i = 0; i < weights.length; i++) bps += Math.floor((weights[i] * (100 - pcts[i])) / 100);
   return bps;
 }

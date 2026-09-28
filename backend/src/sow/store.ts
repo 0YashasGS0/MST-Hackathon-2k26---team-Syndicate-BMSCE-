@@ -285,6 +285,17 @@ export class SowStore {
       );
   }
 
+  /** The approved SOW of the draft linked to an on-chain deal id (latest version; linked drafts can't change). */
+  getSowForDeal(dealId: number): { draftId: string; sowJson: string; sowHash: string } | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT v.draft_id, v.sow_json, v.sow_hash FROM drafts d JOIN sow_versions v ON v.draft_id = d.id
+         WHERE d.deal_id = ? AND d.status = 'linked' ORDER BY v.version DESC LIMIT 1`,
+      )
+      .get(dealId) as { draft_id: string; sow_json: string; sow_hash: string } | undefined;
+    return row && { draftId: row.draft_id, sowJson: row.sow_json, sowHash: row.sow_hash };
+  }
+
   /** Idempotent: the same reasoning always has the same hash. */
   saveRuling(reasoningHash: string, dealId: number, reasoning: unknown, now: number): void {
     this.db
