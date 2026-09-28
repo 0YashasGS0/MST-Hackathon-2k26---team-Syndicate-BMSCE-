@@ -50,8 +50,27 @@
   "deliveryNotes": "Seller: site delivered at the staging link. Remaining content can be added later by the client.",
   "complaint": "Every page is a placeholder with lorem ipsum text. The menu page just says 'Coming soon'. There is no reservation form anywhere; the contact link goes to a 404.",
   "evidenceNotes": "E1 home.png: stock placeholder image and lorem ipsum text; no address and no opening hours. The layout does resize on a phone. E2 menu.png: page shows only the heading 'Menu – coming soon'; no items. E3 contact-404.png: the only form link returns 404; no reservation form found on any page.",
-  "expectedBuyerBps": {
-    "min": 8000,
-    "max": 10000
+  "groundTruth": {
+    "D1": [
+      {
+        "verdict": "not_met"
+      },
+      {
+        "verdict": "met"
+      }
+    ],
+    "D2": [
+      {
+        "verdict": "not_met"
+      },
+      {
+        "verdict": "not_met"
+      }
+    ],
+    "D3": [
+      {
+        "verdict": "not_met"
+      }
+    ]
   }
 }

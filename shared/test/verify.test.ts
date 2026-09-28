@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { computeBuyerBps, hashJson, hashSow, loadSplitWasm, verifyRuling, type ArbitratorReasoning, type Reasoning, type Sow, type SplitWasm } from "../src";
+import { computeBuyerBps, fulfilledFromCriteria, hashJson, hashSow, loadSplitWasm, verifyRuling, type ArbitratorReasoning, type CriteriaScore, type Reasoning, type Sow, type SplitWasm } from "../src";
 
 const WASM_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../dist/split.wasm");
 
@@ -49,7 +49,7 @@ describe("verifyRuling", () => {
   it("clean pass: every check true (with WASM and on-chain bps)", () => {
     const r = verifyRuling({ reasoning, onchainReasoningHash: onchainHash.toUpperCase().replace("0X", "0x"), onchainProposedBps: 3800, sow, wasm });
     expect(r).toEqual({
-      source: "agent", hashMatches: true, bpsMatchesFormula: true, bpsMatchesOnchain: true, settledMatches: null, wasmMatchesTs: true, sowMatches: true,
+      source: "agent", hashMatches: true, bpsMatchesFormula: true, bpsMatchesOnchain: true, fulfilledMatches: null, settledMatches: null, wasmMatchesTs: true, sowMatches: true,
       recomputedHash: onchainHash, recomputedBps: 3800, ok: true,
     });
   });
@@ -112,7 +112,7 @@ describe("verifyRuling — arbitrator rulings and settlement", () => {
     // proposedBuyerBps on-chain is still the agent's stale 3800 — must be ignored for arbitrator rulings.
     const r = verifyRuling({ reasoning: arb, onchainReasoningHash: arbHash, onchainProposedBps: 3800, settled: { toBuyer: 60_000_000n, amount: "100000000" }, sow, wasm });
     expect(r).toEqual({
-      source: "arbitrator", hashMatches: true, bpsMatchesFormula: null, bpsMatchesOnchain: null, settledMatches: true, wasmMatchesTs: null,
+      source: "arbitrator", hashMatches: true, bpsMatchesFormula: null, bpsMatchesOnchain: null, fulfilledMatches: null, settledMatches: true, wasmMatchesTs: null,
       sowMatches: true, recomputedHash: arbHash, recomputedBps: null, ok: true,
     });
   });
@@ -143,6 +143,47 @@ describe("verifyRuling — arbitrator rulings and settlement", () => {
   it("agent reasoning without `source` hashes exactly as before (no field added)", () => {
     expect("source" in reasoning).toBe(false);
     expect(hashJson(reasoning)).toBe(onchainHash);
+  });
+});
+
+describe("verifyRuling — v3 criterion-level rulings", () => {
+  // sow: D1 has 1 criterion, D2 1, D3 1 (see fixture above).
+  const v3scores: CriteriaScore[] = [
+    { id: "D1", fulfilledPct: 100, criteria: [{ index: 0, verdict: "met", rationale: "ok", evidenceRefs: ["E1"] }] },
+    { id: "D2", fulfilledPct: 60, criteria: [{ index: 0, verdict: "partial", satisfied: 12, total: 20, rationale: "12 of 20", evidenceRefs: ["E2"] }] },
+    { id: "D3", fulfilledPct: 0, criteria: [{ index: 0, verdict: "not_met", rationale: "no email", evidenceRefs: ["E3"] }] },
+  ];
+  const v3: Reasoning = { ...reasoning, scores: v3scores, buyerBps: computeBuyerBps(sow.deliverables, v3scores), promptVersion: "v3" };
+  const v3hash = hashJson(v3);
+
+  it("clean v3 ruling: fulfilledMatches true (TS and WASM), ok", () => {
+    expect(v3.buyerBps).toBe(1200 + 2000); // D2 3000×40% + D3 2000×100%
+    const r = verifyRuling({ reasoning: v3, onchainReasoningHash: v3hash, onchainProposedBps: 3200, sow, wasm });
+    expect(r).toMatchObject({ fulfilledMatches: true, wasmMatchesTs: true, bpsMatchesFormula: true, hashMatches: true, ok: true });
+  });
+
+  it("a tampered verdict is caught even when the hash is recomputed by the tamperer", () => {
+    const t = structuredClone(v3);
+    (t.scores[1] as CriteriaScore).criteria[0].satisfied = 19; // verdict now says 95%, but fulfilledPct still 60
+    const r = verifyRuling({ reasoning: t, onchainReasoningHash: hashJson(t), sow, wasm });
+    expect(r).toMatchObject({ hashMatches: true, fulfilledMatches: false, ok: false });
+  });
+
+  it("an invalid verdict (partial without counts) fails fulfilledMatches", () => {
+    const t = structuredClone(v3);
+    delete (t.scores[1] as CriteriaScore).criteria[0].satisfied;
+    const r = verifyRuling({ reasoning: t, onchainReasoningHash: hashJson(t), sow });
+    expect(r).toMatchObject({ fulfilledMatches: false, ok: false });
+  });
+
+  it("v1/v2-shaped rulings still verify, with fulfilledMatches null and unchanged hashes", () => {
+    const r = verifyRuling({ reasoning, onchainReasoningHash: onchainHash, onchainProposedBps: 3800, sow, wasm });
+    expect(r).toMatchObject({ fulfilledMatches: null, ok: true });
+    expect(hashJson(reasoning)).toBe(onchainHash);
+  });
+
+  it("fulfilledFromCriteria matches what the v3 ruling stored", () => {
+    for (const sc of v3scores) expect(fulfilledFromCriteria(sc.criteria, 1)).toBe(sc.fulfilledPct);
   });
 });
 

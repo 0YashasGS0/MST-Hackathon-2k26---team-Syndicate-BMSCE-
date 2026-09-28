@@ -50,8 +50,27 @@
   "deliveryNotes": "Seller: delivered gallery (34 photos, lightbox), about page with the supplied bio and portrait, and the booking form with a date picker. Site is live on the agreed domain.",
   "complaint": "I don't like the dark grey colour scheme. I wanted something warm, like beige, and the font feels cold. I want my money back.",
   "evidenceNotes": "E1 gallery.png: 34 photos in a grid that reflows on mobile. E2 lightbox.mp4: clicking any photo opens it full-screen. E3 about.png: bio and portrait match the files the client sent. E4 booking-test.mp4: form with a date field submitted; the photographer's inbox received the email within a minute. E5 client-brief.pdf: the original brief does not mention colours or fonts.",
-  "expectedBuyerBps": {
-    "min": 0,
-    "max": 500
+  "groundTruth": {
+    "D1": [
+      {
+        "verdict": "met"
+      },
+      {
+        "verdict": "met"
+      }
+    ],
+    "D2": [
+      {
+        "verdict": "met"
+      }
+    ],
+    "D3": [
+      {
+        "verdict": "met"
+      },
+      {
+        "verdict": "met"
+      }
+    ]
   }
 }

@@ -5,10 +5,10 @@
 //                fail  = valid ruling out of range, or the model's output never validated (quality problem)
 //                error = API / rate-limit / network failure (says nothing about the prompt) — excluded from stats
 // Scenario:      PASS | FAIL (any fail) | INCOMPLETE (no fails, but some runs errored or a baseline is missing)
-import { hashSow } from "@kernel-exploits/shared";
+import { hasCriteria, hashSow, type RulingScore } from "@kernel-exploits/shared";
 import { SowStore } from "../sow/store";
 import type { BackoffOptions } from "./resilience";
-import type { Scenario } from "./scenarios";
+import type { GroundTruthVerdict, Scenario } from "./scenarios";
 import { scoreDispute } from "./scoreDispute";
 import { AgentValidationError, type LlmChain } from "./toolRetry";
 
@@ -19,7 +19,13 @@ export type EvalRow = {
   scenario: string;
   run: number;
   status: RunStatus;
-  scores: { id: string; fulfilledPct: number; rationale: string }[];
+  scores: RulingScore[]; // v1/v2: pct + rationale; v3: pct (computed) + per-criterion verdicts
+  /** Non-transient attempts that failed validation: which model, and its errors (for INVALID diagnostics). */
+  attempts: { attempt: number; model: string; error: string }[];
+  /** The last raw tool output (for printing verdicts of INVALID runs). */
+  lastRaw?: unknown;
+  /** v3: criteria whose verdict (and counts, for partial) equal groundTruth; null for v1/v2 or no ruling. */
+  agreement: { agree: number; total: number } | null;
   buyerBps: number | null; // null when no valid ruling
   inRange: boolean;
   model: string;
@@ -42,6 +48,7 @@ export type EvalSummary = {
   max: number | null;
   spread: number | null;
   median: number | null;
+  agreement: { agree: number; total: number } | null; // summed over valid v3 runs
   relative?: { baseline: string; delta: number | null; maxDeltaBps: number; ok: boolean | null };
 };
 
@@ -98,7 +105,9 @@ export async function runEval(opts: EvalOptions): Promise<{ rows: EvalRow[]; sum
           scenario: sc.id,
           run,
           status: inRange ? "ok" : "fail",
-          scores: r.scores.map(({ id, fulfilledPct, rationale }) => ({ id, fulfilledPct, rationale })),
+          scores: r.scores,
+          attempts: [],
+          agreement: agreementWith(r.scores, sc.groundTruth),
           buyerBps: r.buyerBps,
           inRange,
           model: r.model,
@@ -110,6 +119,8 @@ export async function runEval(opts: EvalOptions): Promise<{ rows: EvalRow[]; sum
           run,
           status: err instanceof AgentValidationError ? "fail" : "error",
           scores: [],
+          attempts: [],
+          agreement: null,
           buyerBps: null,
           inRange: false,
           model: "-",
@@ -117,6 +128,13 @@ export async function runEval(opts: EvalOptions): Promise<{ rows: EvalRow[]; sum
           error: err instanceof Error ? err.message : String(err),
         };
       }
+      // Diagnostics from this run's audit rows: each failed validation attempt (model + errors), and the last raw output.
+      const logged = store.db
+        .prepare("SELECT attempt, model, error, response_json FROM agent_calls WHERE id > ? AND transient = 0 ORDER BY id")
+        .all(lastLogId) as { attempt: number; model: string; error: string | null; response_json: string | null }[];
+      row.attempts = logged.filter((l) => l.error).map((l) => ({ attempt: l.attempt, model: l.model, error: l.error! }));
+      const lastResponse = [...logged].reverse().find((l) => l.response_json);
+      if (lastResponse) row.lastRaw = JSON.parse(lastResponse.response_json!);
       rows.push(row);
       opts.onRow?.(row);
 
@@ -133,6 +151,22 @@ export async function runEval(opts: EvalOptions): Promise<{ rows: EvalRow[]; sum
     }
   }
   return { rows, summary: summarize(opts.scenarios, rows, opts.relativeChecks ?? DEFAULT_RELATIVE_CHECKS) };
+}
+
+const sameVerdict = (a: { verdict: string; satisfied?: number; total?: number }, b: GroundTruthVerdict) =>
+  a.verdict === b.verdict && (a.verdict !== "partial" || (a.satisfied === b.satisfied && a.total === b.total));
+
+/** v3 only: how many criterion verdicts equal the ground truth (partial must also match the counts). */
+export function agreementWith(scores: RulingScore[], gt: Record<string, GroundTruthVerdict[]>): { agree: number; total: number } | null {
+  if (!scores.length || !scores.every(hasCriteria)) return null;
+  let agree = 0;
+  let total = 0;
+  for (const s of scores) {
+    const truth = gt[s.id] ?? [];
+    total += truth.length;
+    for (const c of s.criteria) if (truth[c.index] && sameVerdict(c, truth[c.index])) agree++;
+  }
+  return { agree, total };
 }
 
 const median = (xs: number[]): number | null => {
@@ -170,10 +204,14 @@ export function summarize(scenarios: Scenario[], rows: EvalRow[], relativeChecks
       else if (ok === null && status === "PASS") status = "INCOMPLETE"; // no valid baseline (or own) runs to compare
     }
 
+    const agreed = mine.map((r) => r.agreement).filter((a): a is { agree: number; total: number } => a !== null);
+    const agreement = agreed.length ? agreed.reduce((t, a) => ({ agree: t.agree + a.agree, total: t.total + a.total }), { agree: 0, total: 0 }) : null;
+
     return {
       scenario: sc.id,
       name: sc.name,
       status,
+      agreement,
       pass: status === "PASS",
       runs: mine.length,
       validRuns: valid.length,
@@ -194,19 +232,52 @@ export function formatRow(r: EvalRow, sc: Scenario): string {
   return [sc.id.padEnd(3), String(r.run).padStart(3), scores.padEnd(28), String(r.buyerBps ?? "-").padStart(6), `${verdict} (${range})`.padEnd(20), r.model.padEnd(24), `${r.latencyMs} ms`].join(" | ");
 }
 
-/** Per-deliverable rationale lines for an out-of-range run (each truncated to 160 chars); [] otherwise. */
-export function formatRationales(r: EvalRow): string[] {
-  if (r.status !== "fail" || !r.scores.length) return [];
-  return r.scores.map((s) => {
-    const text = s.rationale.replace(/\s+/g, " ").trim();
-    return `      ${s.id} (${s.fulfilledPct}): ${text.length > 160 ? `${text.slice(0, 159)}…` : text}`;
-  });
+const clip = (text: string, n: number) => {
+  const t = text.replace(/\s+/g, " ").trim();
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+};
+
+type LooseCriterion = { index?: unknown; verdict?: unknown; satisfied?: unknown; total?: unknown; rationale?: unknown };
+const fmtVerdict = (c: { verdict?: unknown; satisfied?: unknown; total?: unknown }) =>
+  c.verdict === "partial" ? `partial ${c.satisfied ?? "?"}/${c.total ?? "?"}` : String(c.verdict ?? "?");
+
+/** Verdict lines for criteria-shaped scores (validated or raw), marked against ground truth. */
+function verdictLines(scores: unknown, sc: Scenario): string[] {
+  if (!Array.isArray(scores)) return [];
+  const lines: string[] = [];
+  for (const s of scores as { id?: unknown; criteria?: unknown }[]) {
+    if (!Array.isArray(s?.criteria)) continue;
+    for (const c of s.criteria as LooseCriterion[]) {
+      const truth = typeof s.id === "string" && typeof c.index === "number" ? sc.groundTruth[s.id]?.[c.index] : undefined;
+      const mark = truth ? `[truth: ${fmtVerdict(truth)} ${sameVerdict(c as { verdict: string }, truth) ? "✓" : "✗"}]` : "[truth: ?]";
+      lines.push(`      ${String(s.id)} c${String(c.index)} ${fmtVerdict(c).padEnd(14)} ${mark.padEnd(26)} ${clip(String(c.rationale ?? ""), 160)}`);
+    }
+  }
+  return lines;
+}
+
+/**
+ * Detail lines for runs worth a look:
+ *  - INVALID (model output never validated): each attempt's model + validation errors (≤300 chars), then the verdicts
+ *    of the last raw output;
+ *  - out of range: per-criterion verdicts (v3) or per-deliverable rationales (v1/v2), each ≤160 chars.
+ */
+export function formatDetails(r: EvalRow, sc: Scenario): string[] {
+  if (r.status !== "fail") return [];
+  if (r.buyerBps === null) {
+    const lines = r.attempts.map((a) => `      attempt ${a.attempt} (${a.model}): ${clip(a.error, 300)}`);
+    const raw = (r.lastRaw as { scores?: unknown } | undefined)?.scores;
+    return [...lines, ...verdictLines(raw, sc)];
+  }
+  if (r.scores.some(hasCriteria)) return verdictLines(r.scores, sc);
+  return r.scores.map((s) => `      ${s.id} (${s.fulfilledPct}): ${clip(hasCriteria(s) ? "" : s.rationale, 160)}`);
 }
 
 export function formatSummary(s: EvalSummary): string[] {
   const lines = [
     `${s.scenario} ${s.name.padEnd(18)} valid runs: ${s.validRuns}/${s.runs}  min=${s.min ?? "-"} max=${s.max ?? "-"} spread=${s.spread ?? "-"} median=${s.median ?? "-"}  ${s.status}`,
   ];
+  if (s.agreement) lines.push(`    criteria agreement ${s.agreement.agree}/${s.agreement.total}`);
   if (s.relative) {
     const r = s.relative;
     lines.push(

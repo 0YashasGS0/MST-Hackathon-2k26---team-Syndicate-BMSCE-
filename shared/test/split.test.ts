@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeBuyerBps } from "../src";
+import { computeBuyerBps, criterionScore, fulfilledFromCriteria } from "../src";
 
 const d = (...w: number[]) => w.map((weightBps, i) => ({ id: `D${i + 1}`, weightBps }));
 const s = (...p: number[]) => p.map((fulfilledPct, i) => ({ id: `D${i + 1}`, fulfilledPct }));
@@ -36,3 +36,33 @@ describe("computeBuyerBps", () => {
     expect(() => computeBuyerBps(d(5000, 4000), s(0, 0))).toThrow(/sum to 10000, got 9000/);
   });
 });
+
+describe("criterion maths (v3)", () => {
+  it("met 100, not_met 0, partial floor(100 × s / t)", () => {
+    expect(criterionScore({ index: 0, verdict: "met" })).toBe(100);
+    expect(criterionScore({ index: 0, verdict: "not_met" })).toBe(0);
+    expect(criterionScore({ index: 0, verdict: "partial", satisfied: 12, total: 20 })).toBe(60);
+    expect(criterionScore({ index: 0, verdict: "partial", satisfied: 8, total: 12 })).toBe(66); // 66.67 → 66
+    expect(criterionScore({ index: 0, verdict: "partial", satisfied: 1, total: 3 })).toBe(33);
+    expect(criterionScore({ index: 0, verdict: "partial", satisfied: 2, total: 3 })).toBe(66);
+  });
+
+  it("fulfilledPct = floor(mean): scenario A's D2 (12/20, 8/12) → floor((60+66)/2) = 63; D3 (not_met, met) → 50", () => {
+    expect(fulfilledFromCriteria([{ index: 0, verdict: "partial", satisfied: 12, total: 20 }, { index: 1, verdict: "partial", satisfied: 8, total: 12 }], 2)).toBe(63);
+    expect(fulfilledFromCriteria([{ index: 1, verdict: "met" }, { index: 0, verdict: "not_met" }], 2)).toBe(50);
+    expect(fulfilledFromCriteria([{ index: 0, verdict: "met" }, { index: 1, verdict: "met" }, { index: 2, verdict: "not_met" }], 3)).toBe(66); // 200/3 → 66
+  });
+
+  it("rejects missing/duplicate/out-of-range indices and malformed verdicts", () => {
+    expect(() => fulfilledFromCriteria([{ index: 0, verdict: "met" }], 2)).toThrow(/missing verdict for criterion index 1/);
+    expect(() => fulfilledFromCriteria([{ index: 0, verdict: "met" }, { index: 0, verdict: "met" }], 2)).toThrow(/appears more than once/);
+    expect(() => fulfilledFromCriteria([{ index: 2, verdict: "met" }], 2)).toThrow(/out of range/);
+    expect(() => criterionScore({ index: 0, verdict: "partial" })).toThrow(/needs integer satisfied and total/);
+    expect(() => criterionScore({ index: 0, verdict: "partial", satisfied: 5, total: 0 })).toThrow(/total must be >= 1/);
+    expect(() => criterionScore({ index: 0, verdict: "partial", satisfied: 21, total: 20 })).toThrow(/between 0 and total/);
+    expect(() => criterionScore({ index: 0, verdict: "partial", satisfied: 1.5, total: 3 })).toThrow(/integer/);
+    expect(() => criterionScore({ index: 0, verdict: "met", satisfied: 3, total: 4 })).toThrow(/contradictory/);
+    expect(() => criterionScore({ index: 0, verdict: "met", satisfied: 4, total: 4 })).not.toThrow();
+  });
+});
+

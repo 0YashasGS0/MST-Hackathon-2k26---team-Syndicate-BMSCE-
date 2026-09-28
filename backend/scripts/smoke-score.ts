@@ -1,7 +1,7 @@
 // One real dispute scoring (partial delivery) against the configured LLM provider. Uses an in-memory DB.
 // Usage: npm run smoke:score
 import "./_env";
-import { hashSow, parseSow } from "@kernel-exploits/shared";
+import { hasCriteria, hashSow, parseSow } from "@kernel-exploits/shared";
 import { createLlmChain } from "../src/agent/createLlmClient";
 import { DisputeScoringError, scoreDispute } from "../src/agent/scoreDispute";
 import { SowStore } from "../src/sow/store";
@@ -58,7 +58,17 @@ try {
   );
   rec.print();
   console.log("validation: PASSED");
-  for (const s of r.scores) console.log(`  ${s.id.padEnd(4)} ${String(s.fulfilledPct).padStart(3)}%  ${s.rationale.slice(0, 140)}  [${s.evidenceRefs.join(", ")}]`);
+  for (const s of r.scores) {
+    if (!hasCriteria(s)) {
+      console.log(`  ${s.id.padEnd(4)} ${String(s.fulfilledPct).padStart(3)}%  ${s.rationale.slice(0, 140)}  [${s.evidenceRefs.join(", ")}]`);
+      continue;
+    }
+    console.log(`  ${s.id.padEnd(4)} ${String(s.fulfilledPct).padStart(3)}%  (computed from ${s.criteria.length} criterion verdicts)`);
+    for (const c of s.criteria) {
+      const v = c.verdict === "partial" ? `partial ${c.satisfied}/${c.total}` : c.verdict;
+      console.log(`       c${c.index} ${v.padEnd(14)} ${c.rationale.slice(0, 120)}  [${c.evidenceRefs.join(", ")}]`);
+    }
+  }
   console.log(`model in reasoningHash: ${r.model}`);
   console.log(`buyerBps: ${r.buyerBps} (buyer refund ${(r.buyerBps / 100).toFixed(2)}%)`);
   console.log(`reasoningHash: ${r.reasoningHash}`);

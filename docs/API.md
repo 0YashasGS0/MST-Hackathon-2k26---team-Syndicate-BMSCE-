@@ -84,12 +84,20 @@ type Deal = {
   sow?: SOW; events: ChainEvent[];
 };
 
-type DisputeScores = { scores: { id: string; fulfilledPct: number; rationale: string; evidenceRefs: string[] }[] }; // integers 0..100
+type DisputeScores = { scores: { id: string; fulfilledPct: number; rationale: string; evidenceRefs: string[] }[] }; // v1/v2; integers 0..100
+
+// v3 (AGENT_PROMPT_VERSION=v3): the LLM outputs verdicts only; fulfilledPct is computed by code.
+//   criterion score: met 100 | not_met 0 | partial floor(100 × satisfied / total)   (shared/src/split.ts criterionScore)
+//   fulfilledPct    = floor(mean of criterion scores)                               (fulfilledFromCriteria; also in split.wasm)
+type CriterionResult = { index: number; verdict: "met" | "partial" | "not_met"; satisfied?: number; total?: number; // counts required for partial
+  rationale: string; evidenceRefs: string[] };
+type CriteriaScore = { id: string; fulfilledPct: number; criteria: CriterionResult[] }; // criteria sorted by index, one per SOW acceptance criterion
 
 // reasoningHash = hashJson(Reasoning) (shared/src/hash.ts: RFC 8785 → keccak256). Stored in dispute_rulings; /verify recomputes it.
 // buyerBps = computeBuyerBps(sow.deliverables, scores) (shared/src/split.ts). Scores are in SOW deliverable order; hashes lowercase.
 type Reasoning = { dealId: number; sowHash: string; deliveryHash: string; evidenceHash: string;
-  scores: DisputeScores["scores"]; buyerBps: number; model: string; promptVersion: string };
+  scores: DisputeScores["scores"] | CriteriaScore[]; buyerBps: number; model: string; promptVersion: string };
+// verifyRuling also returns fulfilledMatches: boolean | null — v3: every fulfilledPct recomputed from its verdicts; null for v1/v2.
 
 // Agent rulings omit `source` (missing = "agent"), so their hashes are unchanged. Arbitrator rulings are stored by B1
 // under the reasoningHash passed to arbitrate(): { source: "arbitrator", dealId, sowHash, buyerBps, ruling, ...extra }.

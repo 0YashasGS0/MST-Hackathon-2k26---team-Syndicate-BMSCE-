@@ -1,10 +1,11 @@
 // Runs every demo scenario EVAL_RUNS times (default 3) through the real scoreDispute with the configured
 // provider/model/fallbacks and AGENT_PROMPT_VERSION. EVAL_DELAY_MS (default 7000) between calls, longer after a
 // 429 that carries a retryDelay (capped at 30 s). Never prints the key or prompts.
-// Usage: npm run eval:disputes      (compare prompts: AGENT_PROMPT_VERSION=v2 npm run eval:disputes)
+// Usage: npm run eval:disputes      (compare prompts: AGENT_PROMPT_VERSION=v3 npm run eval:disputes)
+// Filters: EVAL_SCENARIOS=A,D (default: all), EVAL_RUNS=3.
 import "./_env";
 import { createLlmChain } from "../src/agent/createLlmClient";
-import { formatRationales, formatRow, formatSummary, runEval } from "../src/agent/evalDisputes";
+import { DEFAULT_RELATIVE_CHECKS, formatDetails, formatRow, formatSummary, runEval } from "../src/agent/evalDisputes";
 import { loadScenarios } from "../src/agent/scenarios";
 import { DISPUTE_PROMPTS } from "../src/agent/scoreDispute";
 
@@ -29,8 +30,21 @@ if (!DISPUTE_PROMPTS[promptVersion]) {
   process.exit(1);
 }
 
-const scenarios = loadScenarios();
+const all = loadScenarios();
+const wanted = (process.env.EVAL_SCENARIOS || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
+const unknown = wanted.filter((id) => !all.some((s) => s.id === id));
+if (unknown.length) {
+  console.error(`EVAL_SCENARIOS has unknown ids: ${unknown.join(", ")} (available: ${all.map((s) => s.id).join(", ")})`);
+  process.exit(1);
+}
+const scenarios = wanted.length ? all.filter((s) => wanted.includes(s.id)) : all;
 const byId = new Map(scenarios.map((s) => [s.id, s]));
+for (const c of DEFAULT_RELATIVE_CHECKS) {
+  if (byId.has(c.scenario) && !byId.has(c.baseline)) {
+    console.warn(`warning: ${c.scenario}'s injection check compares against ${c.baseline} from this same run, but ${c.baseline} isn't included — ${c.scenario} will be INCOMPLETE. Use EVAL_SCENARIOS=${c.baseline},${c.scenario}.`);
+  }
+}
+for (const s of scenarios) console.log(`scenario ${s.id} (${s.name}): ground truth ${s.expectedBps} bps → range ${s.expectedBuyerBps.min}–${s.expectedBuyerBps.max}`);
 console.log(`provider: ${llm[0].provider}   models: ${llm.map((c) => c.model).join(" → ")}   prompt: ${promptVersion}   runs: ${runs}   delay: ${delayMs} ms`);
 console.log(["sc ", "run", "scores".padEnd(28), "bps".padStart(6), "in range?".padEnd(20), "model".padEnd(24), "latency"].join(" | "));
 
@@ -42,7 +56,7 @@ const { summary } = await runEval({
   delayMs,
   onRow: (r) => {
     console.log(formatRow(r, byId.get(r.scenario)!));
-    for (const line of formatRationales(r)) console.log(line);
+    for (const line of formatDetails(r, byId.get(r.scenario)!)) console.log(line);
   },
   onWait: (ms, reason) => console.log(`    (waiting ${ms} ms: ${reason})`),
 });

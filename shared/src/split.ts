@@ -48,3 +48,61 @@ export function computeBuyerBps(deliverables: readonly WeightedDeliverable[], sc
   for (let i = 0; i < weights.length; i++) bps += Math.floor((weights[i] * (100 - pcts[i])) / 100);
   return bps;
 }
+
+// ---- Criterion-level scoring (prompt v3): the LLM gives verdicts, the code computes percentages. ----
+
+export type Verdict = "met" | "partial" | "not_met";
+/** One acceptance criterion's verdict. `satisfied`/`total` are required for "partial" (countable criteria only). */
+export type CriterionVerdict = { index: number; verdict: Verdict; satisfied?: number; total?: number };
+
+const isInt = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n);
+
+/** Throws unless the verdict is well-formed. met/not_met may carry counts only if consistent (n/n, 0/n). */
+export function validateVerdict(v: CriterionVerdict): void {
+  const has = v.satisfied !== undefined || v.total !== undefined;
+  if (has || v.verdict === "partial") {
+    if (!isInt(v.satisfied) || !isInt(v.total)) throw new Error(`criterion ${v.index}: "${v.verdict}" needs integer satisfied and total`);
+    if (v.total < 1) throw new Error(`criterion ${v.index}: total must be >= 1`);
+    if (v.satisfied < 0 || v.satisfied > v.total) throw new Error(`criterion ${v.index}: satisfied must be between 0 and total`);
+    if (v.verdict === "met" && v.satisfied !== v.total) throw new Error(`criterion ${v.index}: "met" with ${v.satisfied}/${v.total} is contradictory`);
+    if (v.verdict === "not_met" && v.satisfied !== 0) throw new Error(`criterion ${v.index}: "not_met" with ${v.satisfied}/${v.total} is contradictory`);
+  }
+  if (!["met", "partial", "not_met"].includes(v.verdict)) throw new Error(`criterion ${v.index}: unknown verdict "${v.verdict}"`);
+}
+
+/** met = 100, not_met = 0, partial = floor(100 × satisfied / total). */
+export function criterionScore(v: CriterionVerdict): number {
+  validateVerdict(v);
+  if (v.verdict === "met") return 100;
+  if (v.verdict === "not_met") return 0;
+  return Math.floor((100 * v.satisfied!) / v.total!);
+}
+
+/**
+ * Orders verdicts by index after checking that indices 0..criteriaCount-1 each appear exactly once.
+ * Shared by the TS and WASM paths.
+ */
+export function orderVerdicts(verdicts: readonly CriterionVerdict[], criteriaCount: number): CriterionVerdict[] {
+  if (!isInt(criteriaCount) || criteriaCount < 1) throw new Error("criteriaCount must be a positive integer");
+  const byIndex = new Map<number, CriterionVerdict>();
+  for (const v of verdicts) {
+    if (!isInt(v.index) || v.index < 0 || v.index >= criteriaCount) throw new Error(`criterion index ${v.index} is out of range 0..${criteriaCount - 1}`);
+    if (byIndex.has(v.index)) throw new Error(`criterion index ${v.index} appears more than once`);
+    validateVerdict(v);
+    byIndex.set(v.index, v);
+  }
+  const out: CriterionVerdict[] = [];
+  for (let i = 0; i < criteriaCount; i++) {
+    const v = byIndex.get(i);
+    if (!v) throw new Error(`missing verdict for criterion index ${i}`);
+    out.push(v);
+  }
+  return out;
+}
+
+/** fulfilledPct = floor(mean of criterion scores), covering every criterion exactly once. */
+export function fulfilledFromCriteria(verdicts: readonly CriterionVerdict[], criteriaCount: number): number {
+  const ordered = orderVerdicts(verdicts, criteriaCount);
+  const sum = ordered.reduce((s, v) => s + criterionScore(v), 0);
+  return Math.floor(sum / criteriaCount);
+}

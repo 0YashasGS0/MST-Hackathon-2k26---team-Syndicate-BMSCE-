@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { computeBuyerBps, loadSplitWasm, type SplitWasm } from "../src";
+import { computeBuyerBps, criterionScore, fulfilledFromCriteria, loadSplitWasm, type CriterionVerdict, type SplitWasm } from "../src";
 
 const WASM_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../dist/split.wasm");
 
@@ -80,3 +80,39 @@ describe("split.wasm parity with split.ts", () => {
     expect(w2.computeBuyerBps(d(3333, 3333, 3334), s(50, 50, 50))).toBe(4999);
   });
 });
+
+describe("split.wasm parity — criterion maths", () => {
+  it("known cases", () => {
+    const a: CriterionVerdict[] = [{ index: 0, verdict: "partial", satisfied: 12, total: 20 }, { index: 1, verdict: "partial", satisfied: 8, total: 12 }];
+    expect(wasm.fulfilledFromCriteria(a, 2)).toBe(63);
+    expect(wasm.criterionScore({ index: 0, verdict: "partial", satisfied: 8, total: 12 })).toBe(66);
+    expect(wasm.criterionScore({ index: 0, verdict: "met" })).toBe(100);
+    expect(wasm.criterionScore({ index: 0, verdict: "not_met" })).toBe(0);
+  });
+
+  it("500 random verdict sets: TS and WASM identical", () => {
+    const r = rng(424242);
+    const kinds = ["met", "partial", "not_met"] as const;
+    for (let c = 0; c < 500; c++) {
+      const n = 1 + Math.floor(r() * 8);
+      const verdicts: CriterionVerdict[] = Array.from({ length: n }, (_, index) => {
+        const verdict = kinds[Math.floor(r() * 3)];
+        if (verdict !== "partial") return { index, verdict };
+        const total = 1 + Math.floor(r() * 50);
+        return { index, verdict, satisfied: Math.floor(r() * (total + 1)), total };
+      });
+      const shuffled = [...verdicts].sort(() => r() - 0.5);
+      const ts = fulfilledFromCriteria(shuffled, n);
+      expect(wasm.fulfilledFromCriteria(shuffled, n), `case ${c}: ${JSON.stringify(verdicts)}`).toBe(ts);
+      for (const v of verdicts) expect(wasm.criterionScore(v)).toBe(criterionScore(v));
+      expect(ts).toBeGreaterThanOrEqual(0);
+      expect(ts).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it("the WASM wrapper applies the same verdict validation", () => {
+    expect(() => wasm.fulfilledFromCriteria([{ index: 0, verdict: "met" }], 2)).toThrow(/missing verdict/);
+    expect(() => wasm.criterionScore({ index: 0, verdict: "partial" })).toThrow(/needs integer satisfied and total/);
+  });
+});
+
