@@ -10,7 +10,8 @@
 
 ## Requests to others
 <!-- Format: - [ ] @B1/@B2/@PG/@FE: what you need — why (hh:mm) -->
-- [ ] @nikil-dev (B1): bring `nikil-dev` up to current `main`, confirm the canonical backend path, replace the payments placeholder with `createPgIntegration(...).paymentsRouter`, mount its `authRouter`, and call `gasDripAddress(address)` after KYC approval.
+- [ ] @nikil-dev (B1): reconcile the backend path before integration: latest `origin/nikil-dev` is Node/Express/TypeScript under `backend/backend/`, while PG modules are under `backend/`. Confirm the canonical path, replace the payments placeholder with `createPgIntegration(...).paymentsRouter`, mount its `authRouter`, and call `gasDripAddress(address)` after KYC approval.
+- [ ] @nikil-dev (B1): provide a backend test command/dependency for PG tests. The B1 package currently has no test script or Vitest dependency; PG tests use Vitest and need a runnable setup after paths are reconciled.
 - [ ] @B1/@B2: `getCaller` is now session-based; swap your stub at merge. Read the verified address from the PG `getCaller(req)` helper; the `x-user-address` header is ignored unless `AUTH_DEV_HEADER=true`.
 - [ ] @nikil-dev (B1): deploy/verify contracts and fill `deployments.md`; confirm ORG allowance and `DEPLOY_BLOCK`. The current `main` deployment record is blank.
 - [ ] @B2: confirm whether any PG endpoint consumes `hashSow` / `hashJson`; current PG flows do not hash SOW or reasoning data.
@@ -29,6 +30,13 @@
 - **Tested:** how it was verified (curl, test, explorer tx link)
 - **Next:** what comes next for this role
 -->
+
+### 2026-09-29 — PG test coverage and B1 integration check
+- **What:** Added unit cases for five repeated payment confirmations, retrying failed funding without a second mint, rejecting deals that are not `Accepted`, gas-drip threshold behavior, one-time send, and terminal failed attempts. Checked the latest local `origin/nikil-dev` snapshot: it is Node/Express/TypeScript, so the earlier Flask/Node mismatch is not present there. The remaining integration mismatch is directory layout: B1's app/package are under `backend/backend/`, but this branch's PG source/tests are under `backend/`.
+- **Files:** `backend/test/payments.test.ts`, `docs/progress/PG.md`
+- **How to use:** Once B1 confirms the canonical directory and test runner, run the auth, wallet connector, and payments Vitest files from the backend package. B1 still needs to mount `authRouter` and `paymentsRouter` and invoke `gasDripAddress(address)` after successful KYC approval.
+- **Tested:** `git diff --check` passed. Focused tests/build were not run: this checkout has no Node.js/npm executable, no local backend package manifest, and no installed test dependencies. No end-to-end QA or backup demo video is possible until B1 supplies deployed addresses and FE provides a runnable UI.
+- **Next:** B1 confirms backend path and test setup; then run build/tests and complete the live payment and settlement QA. SARAL remains fail-closed until mentor docs arrive.
 
 ### 2026-09-29 — Provider-agnostic wallet auth and session caller
 - **What:** Replaced raw wallet-message login with a five-minute SQLite nonce and strict EIP-4361-style verification for chain `91562037`. Successful verification consumes the nonce and issues a one-hour HMAC-signed HttpOnly session cookie. `getCaller(req)` reads that verified cookie; `x-user-address` is ignored unless `AUTH_DEV_HEADER=true`. Added a standard injected EIP-1193 wallet connector with chain switch/add handling and a SARAL connector stub that always fails closed. Gas drips persist an address claim and outcome, with one attempt per address. SARAL sponsored transactions are **unknown pending docs**.
