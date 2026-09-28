@@ -2,12 +2,12 @@
 // Usage: npm run smoke:score
 import "./_env";
 import { hashSow, parseSow } from "@kernel-exploits/shared";
-import { createLlmClient } from "../src/agent/createLlmClient";
+import { createLlmChain } from "../src/agent/createLlmClient";
 import { DisputeScoringError, scoreDispute } from "../src/agent/scoreDispute";
 import { SowStore } from "../src/sow/store";
 import { SAMPLE_PARTIES, attemptRecorder, sampleToken } from "./_env";
 
-const llm = createLlmClient();
+const llm = createLlmChain();
 if (!llm) {
   console.error("LLM_API_KEY is not set in .env — nothing to test.");
   process.exit(1);
@@ -38,8 +38,7 @@ store.logAgentCall = (call, now) => {
   origLog(call, now);
 };
 
-console.log(`provider: ${llm.provider}`);
-console.log(`model:    ${llm.model}`);
+rec.header();
 const started = Date.now();
 try {
   const r = await scoreDispute(
@@ -58,14 +57,15 @@ try {
     { llm, store, demoFallback: false, promptVersion: process.env.AGENT_PROMPT_VERSION || "v1" },
   );
   rec.print();
-  console.log(`validation: PASSED after ${rec.rows.length} attempt(s)`);
+  console.log("validation: PASSED");
   for (const s of r.scores) console.log(`  ${s.id.padEnd(4)} ${String(s.fulfilledPct).padStart(3)}%  ${s.rationale.slice(0, 140)}  [${s.evidenceRefs.join(", ")}]`);
+  console.log(`model in reasoningHash: ${r.model}`);
   console.log(`buyerBps: ${r.buyerBps} (buyer refund ${(r.buyerBps / 100).toFixed(2)}%)`);
   console.log(`reasoningHash: ${r.reasoningHash}`);
 } catch (err) {
   rec.print();
   if (err instanceof DisputeScoringError) {
-    console.log(`validation: FAILED after ${rec.rows.length} attempt(s)`);
+    console.log("validation: FAILED after the retry");
     for (const i of err.issues) console.log(`  - ${i}`);
   } else {
     console.log(`error: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`);

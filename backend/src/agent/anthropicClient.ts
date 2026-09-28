@@ -9,6 +9,7 @@ const NO_FORCED_TOOL = /^claude-(opus-5-5|fable-5-1|mythos-5-1)/;
 
 export class AnthropicLlmClient implements LlmClient {
   readonly provider = "anthropic";
+  readonly toolMode: string;
   private readonly client: Anthropic;
   lastCall?: LlmCallInfo;
 
@@ -17,7 +18,9 @@ export class AnthropicLlmClient implements LlmClient {
     apiKey: string,
   ) {
     // logLevel "warn": never let SDK debug logging print request headers (API key) or prompts.
-    this.client = new Anthropic({ apiKey, logLevel: "warn" });
+    // maxRetries 0: transient retries/fallback happen in resilience.ts, where each try is logged.
+    this.client = new Anthropic({ apiKey, logLevel: "warn", maxRetries: 0 });
+    this.toolMode = NO_FORCED_TOOL.test(model) ? "auto (model rejects forced tool_choice)" : "tool (forced)";
   }
 
   async callTool({ system, prompt, tool }: ToolCallRequest): Promise<unknown> {

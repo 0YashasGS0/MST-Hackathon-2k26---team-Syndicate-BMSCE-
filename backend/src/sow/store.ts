@@ -51,6 +51,8 @@ export type AgentCall = {
   request: unknown;
   response?: unknown;
   error?: string;
+  statusCode?: number | null;
+  transient?: boolean;
 };
 
 const SCHEMA = `
@@ -97,6 +99,8 @@ CREATE TABLE IF NOT EXISTS agent_calls (
   request_json   TEXT NOT NULL,
   response_json  TEXT,
   error          TEXT,
+  status_code    INTEGER,
+  transient      INTEGER NOT NULL DEFAULT 0,
   created_at     INTEGER NOT NULL
 );
 
@@ -153,9 +157,14 @@ export class SowStore {
     }
     this.db.pragma("foreign_keys = ON");
     this.db.exec(SCHEMA);
-    // Older local DBs created agent_calls without `provider`.
-    const cols = this.db.prepare(`PRAGMA table_info(agent_calls)`).all() as { name: string }[];
-    if (!cols.some((c) => c.name === "provider")) this.db.exec(`ALTER TABLE agent_calls ADD COLUMN provider TEXT NOT NULL DEFAULT 'unknown'`);
+    // Older local DBs created agent_calls before these columns existed.
+    const cols = new Set((this.db.prepare(`PRAGMA table_info(agent_calls)`).all() as { name: string }[]).map((c) => c.name));
+    const added: [string, string][] = [
+      ["provider", "TEXT NOT NULL DEFAULT 'unknown'"],
+      ["status_code", "INTEGER"],
+      ["transient", "INTEGER NOT NULL DEFAULT 0"],
+    ];
+    for (const [name, type] of added) if (!cols.has(name)) this.db.exec(`ALTER TABLE agent_calls ADD COLUMN ${name} ${type}`);
   }
 
   createDraft(input: NewDraft, now: number): Draft {
@@ -257,8 +266,8 @@ export class SowStore {
   logAgentCall(call: AgentCall, now: number): void {
     this.db
       .prepare(
-        `INSERT INTO agent_calls (subject, kind, attempt, provider, model, prompt_version, request_json, response_json, error, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO agent_calls (subject, kind, attempt, provider, model, prompt_version, request_json, response_json, error, status_code, transient, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         call.subject,
@@ -270,6 +279,8 @@ export class SowStore {
         JSON.stringify(call.request),
         call.response === undefined ? null : JSON.stringify(call.response),
         call.error ?? null,
+        call.statusCode ?? null,
+        call.transient ? 1 : 0,
         now,
       );
   }

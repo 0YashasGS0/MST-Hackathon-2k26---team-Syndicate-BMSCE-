@@ -3,8 +3,9 @@
 import { z } from "zod";
 import { computeBuyerBps, hashJson, hashSow, parseSow, type Sow } from "@kernel-exploits/shared";
 import { SowStore } from "../sow/store";
-import type { LlmClient, ToolDef } from "./llm";
-import { AgentValidationError, LlmUnavailableError, callToolWithRetry, escapeData } from "./toolRetry";
+import type { ToolDef } from "./llm";
+import type { BackoffOptions } from "./resilience";
+import { AgentValidationError, LlmUnavailableError, callToolWithRetry, escapeData, type LlmChain } from "./toolRetry";
 
 export { AgentValidationError as DisputeScoringError, LlmUnavailableError };
 
@@ -36,7 +37,8 @@ export type Reasoning = {
 export type Ruling = { scores: Score[]; buyerBps: number; reasoningHash: string; model: string; promptVersion: string };
 
 export type ScorerDeps = {
-  llm?: LlmClient; // required unless demoFallback (agent/index.ts fills it from env via createLlmClient)
+  llm?: LlmChain; // required unless demoFallback (agent/index.ts fills it from env: primary + LLM_FALLBACK_MODELS)
+  backoff?: BackoffOptions;
   demoFallback?: boolean; // default env AGENT_DEMO_FALLBACK === "true"
   promptVersion?: string; // default env AGENT_PROMPT_VERSION || "v1"
   store?: SowStore; // default: shared DB at DB_PATH
@@ -128,15 +130,16 @@ export async function scoreDispute(input: DisputeInput, deps: ScorerDeps = {}): 
   } else {
     const llm = deps.llm;
     if (!llm) throw new LlmUnavailableError("no LLM client configured (set LLM_API_KEY, or AGENT_DEMO_FALLBACK=true)");
-    model = llm.model;
-    scores = await callToolWithRetry({
+    // The model that actually answered (after any fallback) goes into the reasoning object and reasoningHash.
+    ({ value: scores, model } = await callToolWithRetry({
       llm,
       system: SYSTEM,
       prompt: buildPrompt(sow, input),
       tool: SCORE_TOOL,
       validate: (raw) => validateScores(raw, sow),
       onAttempt: (a) => store.logAgentCall({ subject: `deal:${input.dealId}`, kind: "score-dispute", promptVersion, ...a }, now()),
-    });
+      backoff: deps.backoff,
+    }));
   }
 
   const buyerBps = computeBuyerBps(sow.deliverables, scores);

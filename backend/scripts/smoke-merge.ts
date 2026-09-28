@@ -2,11 +2,11 @@
 // Usage: npm run smoke:merge   (LLM_PROVIDER, LLM_API_KEY, LLM_MODEL from backend/.env or repo-root .env)
 import "./_env";
 import { hashSow } from "@kernel-exploits/shared";
-import { createLlmClient } from "../src/agent/createLlmClient";
+import { createLlmChain } from "../src/agent/createLlmClient";
 import { mergeSow, SowMergeError } from "../src/agent/mergeSow";
 import { SAMPLE_PARTIES, attemptRecorder, sampleToken } from "./_env";
 
-const llm = createLlmClient();
+const llm = createLlmChain();
 if (!llm) {
   console.error("LLM_API_KEY is not set in .env — nothing to test.");
   process.exit(1);
@@ -26,13 +26,13 @@ const input = {
 };
 
 const rec = attemptRecorder(llm);
-console.log(`provider: ${llm.provider}`);
-console.log(`model:    ${llm.model}`);
+rec.header();
 const started = Date.now();
 try {
   const result = await mergeSow(input, { llm, token, demoFallback: false, onCall: rec.onAttempt });
   rec.print();
-  console.log(`validation: PASSED after ${rec.rows.length} attempt(s)`);
+  console.log("validation: PASSED");
+  console.log(`result.model: ${result.model}`);
   console.log(`title: ${result.sow.title}`);
   for (const d of result.sow.deliverables) console.log(`  ${d.id.padEnd(4)} ${String(d.weightBps).padStart(5)} bps  ${d.title}`);
   console.log(`  sum  ${result.sow.deliverables.reduce((s, d) => s + d.weightBps, 0)} bps`);
@@ -43,7 +43,7 @@ try {
 } catch (err) {
   rec.print();
   if (err instanceof SowMergeError) {
-    console.log(`validation: FAILED after ${rec.rows.length} attempt(s)`);
+    console.log("validation: FAILED after the retry");
     for (const i of err.issues) console.log(`  - ${i}`);
   } else {
     console.log(`error: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`);

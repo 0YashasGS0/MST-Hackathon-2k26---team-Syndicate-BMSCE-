@@ -23,3 +23,17 @@ export function createLlmClient(env: NodeJS.ProcessEnv = process.env): LlmClient
   }
   return new GeminiLlmClient(env.LLM_MODEL, key);
 }
+
+/**
+ * Primary client + one client per LLM_FALLBACK_MODELS entry (comma-separated, same provider and key),
+ * tried in order when the previous model keeps failing with transient errors. undefined when no key is set.
+ */
+export function createLlmChain(env: NodeJS.ProcessEnv = process.env): LlmClient[] | undefined {
+  const primary = createLlmClient(env);
+  if (!primary) return undefined;
+  const fallbacks = (env.LLM_FALLBACK_MODELS ?? "")
+    .split(",")
+    .map((m) => m.trim())
+    .filter((m, i, all) => m && m !== primary.model && all.indexOf(m) === i);
+  return [primary, ...fallbacks.map((m) => createLlmClient({ ...env, LLM_MODEL: m })!)];
+}

@@ -3,8 +3,9 @@
 // come from the draft (server-controlled) and can never be changed by the model.
 import { z } from "zod";
 import { SOW_VERSION, SowSchema, TOTAL_BPS, type Sow } from "@kernel-exploits/shared";
-import type { LlmClient, ToolDef } from "./llm";
-import { AgentValidationError, LlmUnavailableError, callToolWithRetry, escapeData, type AttemptLog } from "./toolRetry";
+import type { ToolDef } from "./llm";
+import type { BackoffOptions } from "./resilience";
+import { AgentValidationError, LlmUnavailableError, callToolWithRetry, escapeData, type AttemptLog, type LlmChain } from "./toolRetry";
 
 export { AgentValidationError as SowMergeError, LlmUnavailableError };
 export const MERGE_PROMPT_VERSION = "sow-merge/v1";
@@ -21,7 +22,8 @@ export type MergeInput = {
 };
 
 export type MergeContext = {
-  llm?: LlmClient;
+  llm?: LlmChain; // one client, or primary + fallback models
+  backoff?: BackoffOptions;
   token: string; // env USD_ADDRESS
   demoFallback: boolean; // env AGENT_DEMO_FALLBACK
   /** Called once per LLM attempt, for the audit log. */
@@ -108,18 +110,19 @@ export async function mergeSow(input: MergeInput, ctx: MergeContext): Promise<Me
   }
   if (!ctx.llm) throw new LlmUnavailableError("LLM_API_KEY is not configured (or set AGENT_DEMO_FALLBACK=true)");
 
-  const { sow, conflicts } = await callToolWithRetry({
+  const { value, model } = await callToolWithRetry({
     llm: ctx.llm,
     system: SYSTEM,
     prompt: buildPrompt(input),
     tool: MERGE_TOOL,
     onAttempt: ctx.onCall,
+    backoff: ctx.backoff,
     validate: (raw) => {
       const r = assemble(raw, input, ctx.token);
       return r.sow ? { ok: true, value: { sow: r.sow, conflicts: [...r.llmConflicts, ...r.extraConflicts] } } : { ok: false, issues: r.issues };
     },
   });
-  return { sow, conflicts, model: ctx.llm.model, promptVersion: MERGE_PROMPT_VERSION };
+  return { ...value, model, promptVersion: MERGE_PROMPT_VERSION }; // model = the one that actually answered
 }
 
 // Keys the model must not set. If it tries, we keep the server value and surface the attempt as a conflict.

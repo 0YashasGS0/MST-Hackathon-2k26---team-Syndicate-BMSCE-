@@ -10,6 +10,8 @@ export type GeminiModelsApi = {
 
 export class GeminiLlmClient implements LlmClient {
   readonly provider = "gemini";
+  /** Always forced: every Gemini model gets mode ANY restricted to the one declared function. */
+  readonly toolMode = "ANY (allowedFunctionNames = [the one declared function])";
   private readonly models: GeminiModelsApi;
   lastCall?: LlmCallInfo;
 
@@ -18,7 +20,8 @@ export class GeminiLlmClient implements LlmClient {
     apiKey: string,
     models?: GeminiModelsApi,
   ) {
-    this.models = models ?? new GoogleGenAI({ apiKey }).models;
+    // SDK retries off (attempts: 1): transient retries/fallback happen in resilience.ts, where each try is logged.
+    this.models = models ?? new GoogleGenAI({ apiKey, httpOptions: { retryOptions: { attempts: 1 } } }).models;
   }
 
   async callTool({ system, prompt, tool }: ToolCallRequest): Promise<unknown> {

@@ -9,29 +9,43 @@ import type { AttemptLog } from "../src/agent/toolRetry";
 const here = dirname(fileURLToPath(import.meta.url));
 config({ path: [resolve(here, "../.env"), resolve(here, "../../.env")], quiet: true });
 
-export type AttemptRow = LlmCallInfo & { attempt: number; outcome: string };
-
-export function attemptRecorder(llm: LlmClient) {
-  const rows: AttemptRow[] = [];
+/**
+ * Records every attempt (validation attempts and transient tries) from AttemptLog + the answering client's lastCall.
+ * The forcing mode printed is the client's CONFIGURED mode (never inferred from a failed request).
+ */
+export function attemptRecorder(chain: readonly LlmClient[]) {
+  const lines: string[] = [];
+  let answeredBy: string | undefined;
   const onAttempt = (a: AttemptLog) => {
-    const info = llm.lastCall;
-    llm.lastCall = undefined;
-    rows.push({
-      attempt: a.attempt,
-      forcedToolChoice: info?.forcedToolChoice ?? false,
-      toolCalled: info?.toolCalled ?? false,
-      stopReason: info?.stopReason ?? "(no response)",
-      latencyMs: info?.latencyMs ?? 0,
-      outcome: a.error ? `failed: ${a.error.slice(0, 200)}` : "valid",
-    });
+    const client = chain.find((c) => c.model === a.model) ?? chain[0];
+    const mode = `mode=${client.toolMode ?? "unknown"}`;
+    if (a.transient) {
+      lines.push(`attempt ${a.attempt} · model=${a.model} · status=${a.statusCode ?? "network error"} (transient) · ${mode}, no response`);
+      return;
+    }
+    const info: LlmCallInfo | undefined = client.lastCall;
+    client.lastCall = undefined;
+    if (!info) {
+      lines.push(`attempt ${a.attempt} · model=${a.model} · status=${a.statusCode ?? "?"} · ${mode}, no response: ${a.error?.slice(0, 160) ?? ""}`);
+      return;
+    }
+    const honoured = info.toolCalled ? "yes" : "no";
+    const outcome = a.error ? `invalid: ${a.error.slice(0, 160)}` : "valid";
+    if (!a.error) answeredBy = a.model;
+    lines.push(
+      `attempt ${a.attempt} · model=${a.model} · status=200 · forced function call honoured: ${honoured} on attempt ${a.attempt} · stop=${info.stopReason} · ${info.latencyMs} ms · ${outcome}`,
+    );
   };
   const print = () => {
-    for (const r of rows) {
-      const honoured = r.forcedToolChoice ? (r.toolCalled ? "yes" : "no") : `n/a, auto mode (tool called: ${r.toolCalled ? "yes" : "no"})`;
-      console.log(`forced function call honoured: ${honoured} on attempt ${r.attempt}  [stop=${r.stopReason}, ${r.latencyMs} ms, ${r.outcome}]`);
-    }
+    for (const l of lines) console.log(l);
+    console.log(`answered by: ${answeredBy ?? "(no model produced a valid answer)"}`);
   };
-  return { rows, onAttempt, print };
+  const header = () => {
+    console.log(`provider: ${chain[0].provider}`);
+    console.log(`mode:     ${chain[0].toolMode}`);
+    console.log(`models:   ${chain.map((c) => c.model).join(" → ")}`);
+  };
+  return { onAttempt, print, header };
 }
 
 export const SAMPLE_PARTIES = {

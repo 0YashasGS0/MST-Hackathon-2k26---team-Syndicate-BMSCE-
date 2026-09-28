@@ -17,6 +17,8 @@ export interface LlmClient {
   readonly model: string;
   /** "gemini" | "anthropic" | test mocks; recorded in agent_calls. */
   readonly provider?: string;
+  /** The configured forcing mode, for diagnostics (e.g. "ANY [submit_sow]" on Gemini). */
+  readonly toolMode?: string;
   lastCall?: LlmCallInfo;
   /** Returns the raw (unvalidated) arguments of the single tool/function call. Throws LlmOutputError if none was made. */
   callTool(req: ToolCallRequest): Promise<unknown>;
