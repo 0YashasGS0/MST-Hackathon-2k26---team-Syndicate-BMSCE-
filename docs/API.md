@@ -13,13 +13,17 @@
 | POST | `/admin/kyc/:address/approve` | B1 | header `x-admin-token` → `{ txHash }` |
 
 ## Drafts & SOW
+> B2's router, mounted by B1 (`app.use(createSowRouter())`). Paths are `/drafts/*` so they never clash with B1's on-chain `/deals/:id`.
+> Caller identity: header `x-user-address: 0x…` (temporary, until PG's auth lands). Missing → 401; not a party → 403.
+
 | Method | Path | Owner | Body → Response |
 |---|---|---|---|
-| POST | `/deals` | B2 | `{ seller, purpose, price, buyerConstraints }` → `Draft` |
-| POST | `/deals/:draftId/seller-input` | B2 | `{ sellerPoints }` → `Draft` |
-| POST | `/deals/:draftId/merge-sow` | B2 | — → `{ version, sow: SOW, sowHash, conflicts: string[] }` |
-| POST | `/deals/:draftId/approve-sow` | B2 | `{ party: "buyer"|"seller", version }` → `{ bothApproved, sowHash?, amount?, deliverBy?, reviewPeriod? }` |
-| POST | `/deals/:draftId/link` | B2 | `{ dealId, txHash }` → `Draft` (links draft to on-chain deal id) |
+| POST | `/drafts` | B2 | `{ buyer, seller, purpose, buyerConstraints, amount, deliveryDeadline, reviewWindowSecs }` → `Draft` (201). Caller must be `buyer`. `amount` base-unit string > 0; `deliveryDeadline` unix s, future |
+| GET | `/drafts/:id` | B2 | → `Draft & { latestSow: SowVersion \| null }` (parties only) |
+| POST | `/drafts/:id/seller-input` | B2 | `{ sellerPoints }` → `Draft` (seller only; status → `ready_to_merge`) |
+| POST | `/drafts/:id/merge-sow` | B2 | — → `{ version, sow: SOW, sowHash, conflicts: string[] }`. New version, approvals reset. 422 `SowValidationFailed` if the agent can't produce a valid SOW after 1 retry; 502 `LlmUnavailable` |
+| POST | `/drafts/:id/approve-sow` | B2 | `{ party: "buyer"\|"seller", version }` → `{ bothApproved, version, sowHash, proposeDealArgs? }`. `version` must be the latest (409 `StaleVersion`); 409 `DeadlinePassed` / `TokenMismatch` block the final approval |
+| POST | `/drafts/:id/link` | B2 | `{ dealId, txHash }` → `Draft` (buyer only, after both approved; status → `linked`) |
 
 ## Deals (on-chain backed)
 | Method | Path | Owner | Body → Response |
@@ -58,8 +62,15 @@ type SOW = {
   exclusions: string[];     // required, out-of-scope items (max 20, each 1–500 chars); [] allowed
 };
 
-type Draft = { id: string; buyer: string; seller: string; purpose: string; price: string;
-  buyerConstraints: string; sellerPoints?: string; status: string; latestSowVersion?: number; dealId?: number };
+type DraftStatus = "awaiting_seller" | "ready_to_merge" | "sow_proposed" | "approved" | "linked";
+type Draft = { id: string; buyer: string; seller: string; purpose: string; buyerConstraints: string;
+  amount: string; deliveryDeadline: number; reviewWindowSecs: number; sellerPoints?: string;
+  status: DraftStatus; latestSowVersion?: number; dealId?: number; linkTxHash?: string; createdAt: number; updatedAt: number };
+
+type SowVersion = { version: number; sow: SOW; sowHash: string; conflicts: string[]; approvals: { buyer: boolean; seller: boolean } };
+
+// Exactly the args for DealEscrow.proposeDeal, derived only from the stored SOW (never differs from what was hashed).
+type ProposeDealArgs = { seller: string; amount: string; sowHash: string; deliverBy: number; reviewPeriod: number };
 
 type ChainEvent = { name: string; args: Record<string, string>; txHash: string; block: number; timestamp: number };
 
