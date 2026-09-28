@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit",
     "smoke:merge": "tsx scripts/smoke-merge.ts",
     "smoke:score": "tsx scripts/smoke-score.ts",
-    "models": "tsx scripts/list-models.ts"
+    "models": "tsx scripts/list-models.ts",
+    "eval:disputes": "tsx scripts/eval-disputes.ts",
+    "seed:demo": "tsx scripts/seed-demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",

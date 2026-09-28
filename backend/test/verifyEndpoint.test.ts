@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import express from "express";
 import request from "supertest";
 import { hashJson, hashSow, type Sow } from "@kernel-exploits/shared";
-import { createDisputeRouter, type DealReader } from "../src/sow";
+import { createDisputeRouter, type DealReader, type SettledReader } from "../src/sow";
 import { SowStore } from "../src/sow/store";
 import { scoreDispute } from "../src/agent";
 import type { LlmClient } from "../src/agent/llm";
@@ -117,6 +117,63 @@ describe("GET /deals/:id/verify", () => {
     };
     const res = await request(app(store, down)).get(`/deals/${DEAL_ID}/verify`).expect(502);
     expect(res.body.error.code).toBe("ChainUnavailable");
+  });
+});
+
+describe("GET /deals/:id/verify — arbitrator rulings (Settled event)", () => {
+  async function withArbitrator(buyerBps: number) {
+    const { store } = await seeded();
+    const arb = { source: "arbitrator" as const, dealId: DEAL_ID, sowHash: hashSow(sow), buyerBps, ruling: "Menu incomplete, form broken.", arbitrator: "0x4444444444444444444444444444444444444444" };
+    const hash = hashJson(arb);
+    store.saveRuling(hash, DEAL_ID, arb, 1); // what B1 stores when it calls arbitrate(id, bps, hash)
+    return { store, hash };
+  }
+  // arbitrate() leaves proposedBuyerBps at the agent's stale 3800; status Resolved (10).
+  const resolved = (hash: string): DealReader => async () => ({ reasoningHash: hash as `0x${string}`, proposedBuyerBps: 3800, status: 10 });
+  const settledWith = (toBuyer: bigint, toSeller: bigint): SettledReader => async () => ({ toBuyer, toSeller });
+
+  it("matching Settled event → ok, stale proposedBuyerBps ignored", async () => {
+    const { store, hash } = await withArbitrator(6000);
+    const a = express();
+    a.use(createDisputeRouter({ store, readDeal: resolved(hash), readSettled: settledWith(60_000_000n, 40_000_000n) }));
+    const res = await request(a).get(`/deals/${DEAL_ID}/verify`).expect(200);
+    expect(res.body).toMatchObject({
+      source: "arbitrator",
+      verifiable: true,
+      onchain: { status: "Resolved", proposedBuyerBps: 3800, settled: { toBuyer: "60000000", toSeller: "40000000" } },
+      result: { source: "arbitrator", ok: true, hashMatches: true, settledMatches: true, bpsMatchesOnchain: null, bpsMatchesFormula: null, sowMatches: true },
+    });
+  });
+
+  it("Settled toBuyer that doesn't match the ruling → not ok", async () => {
+    const { store, hash } = await withArbitrator(6000);
+    const a = express();
+    a.use(createDisputeRouter({ store, readDeal: resolved(hash), readSettled: settledWith(38_000_000n, 62_000_000n) }));
+    const res = await request(a).get(`/deals/${DEAL_ID}/verify`).expect(200);
+    expect(res.body.result).toMatchObject({ ok: false, settledMatches: false, hashMatches: true });
+  });
+
+  it("an agent ruling still checks on-chain proposedBuyerBps (and Settled when Resolved)", async () => {
+    const { store, ruling } = await seeded();
+    const a = express();
+    a.use(createDisputeRouter({ store, readDeal: async () => ({ reasoningHash: ruling.reasoningHash as `0x${string}`, proposedBuyerBps: 3800, status: 10 }), readSettled: settledWith(38_000_000n, 62_000_000n) }));
+    const res = await request(a).get(`/deals/${DEAL_ID}/verify`).expect(200);
+    expect(res.body.result).toMatchObject({ source: "agent", ok: true, bpsMatchesOnchain: true, settledMatches: true, bpsMatchesFormula: true });
+  });
+
+  it("Resolved deal without a Settled reader configured → 502 (router still constructs)", async () => {
+    const { store, hash } = await withArbitrator(6000);
+    const saved = { ...process.env };
+    delete process.env.MST_RPC_URL;
+    delete process.env.ESCROW_ADDRESS;
+    try {
+      const a = express();
+      a.use(createDisputeRouter({ store, readDeal: resolved(hash) }));
+      const res = await request(a).get(`/deals/${DEAL_ID}/verify`).expect(502);
+      expect(res.body.error.message).toMatch(/no Settled reader configured/);
+    } finally {
+      process.env = saved;
+    }
   });
 });
 

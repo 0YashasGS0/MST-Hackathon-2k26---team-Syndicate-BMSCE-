@@ -1,0 +1,57 @@
+{
+  "id": "B",
+  "name": "seller wins",
+  "description": "Everything delivered per the criteria; complaint is a colour preference not in the SOW.",
+  "sow": {
+    "version": "sow/v1",
+    "title": "Portfolio website for Lena Ortiz Photography",
+    "buyer": "0x1111111111111111111111111111111111111111",
+    "seller": "0x2222222222222222222222222222222222222222",
+    "token": "0x3333333333333333333333333333333333333333",
+    "amount": "80000000",
+    "deliveryDeadline": 1900000000,
+    "reviewWindowSecs": 172800,
+    "deliverables": [
+      {
+        "id": "D1",
+        "title": "Gallery page",
+        "description": "Photo gallery with lightbox.",
+        "acceptanceCriteria": [
+          "At least 30 photos shown in a responsive grid",
+          "Clicking a photo opens it full-screen in a lightbox"
+        ],
+        "weightBps": 4000
+      },
+      {
+        "id": "D2",
+        "title": "About page",
+        "description": "Bio and portrait.",
+        "acceptanceCriteria": [
+          "Shows the bio text and portrait photo supplied by the client"
+        ],
+        "weightBps": 3000
+      },
+      {
+        "id": "D3",
+        "title": "Booking form",
+        "description": "Booking enquiry form.",
+        "acceptanceCriteria": [
+          "Submitting the form emails the photographer",
+          "The form includes a preferred-date field"
+        ],
+        "weightBps": 3000
+      }
+    ],
+    "exclusions": [
+      "Domain and hosting",
+      "Photo editing or retouching"
+    ]
+  },
+  "deliveryNotes": "Seller: delivered gallery (34 photos, lightbox), about page with the supplied bio and portrait, and the booking form with a date picker. Site is live on the agreed domain.",
+  "complaint": "I don't like the dark grey colour scheme. I wanted something warm, like beige, and the font feels cold. I want my money back.",
+  "evidenceNotes": "E1 gallery.png: 34 photos in a grid that reflows on mobile. E2 lightbox.mp4: clicking any photo opens it full-screen. E3 about.png: bio and portrait match the files the client sent. E4 booking-test.mp4: form with a date field submitted; the photographer's inbox received the email within a minute. E5 client-brief.pdf: the original brief does not mention colours or fonts.",
+  "expectedBuyerBps": {
+    "min": 0,
+    "max": 500
+  }
+}

@@ -167,8 +167,7 @@ export class SowStore {
     for (const [name, type] of added) if (!cols.has(name)) this.db.exec(`ALTER TABLE agent_calls ADD COLUMN ${name} ${type}`);
   }
 
-  createDraft(input: NewDraft, now: number): Draft {
-    const id = randomUUID();
+  createDraft(input: NewDraft, now: number, id: string = randomUUID()): Draft {
     this.db
       .prepare(
         `INSERT INTO drafts (id, buyer, seller, purpose, buyer_constraints, amount, delivery_deadline,
@@ -188,6 +187,15 @@ export class SowStore {
         now,
       );
     return this.getDraft(id)!;
+  }
+
+  /** Removes a draft, its SOW versions and its agent_calls rows (used by seed:demo to reset demo drafts). */
+  deleteDraft(id: string): void {
+    this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM sow_versions WHERE draft_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM agent_calls WHERE subject = ?`).run(`draft:${id}`);
+      this.db.prepare(`DELETE FROM drafts WHERE id = ?`).run(id);
+    })();
   }
 
   getDraft(id: string): Draft | undefined {

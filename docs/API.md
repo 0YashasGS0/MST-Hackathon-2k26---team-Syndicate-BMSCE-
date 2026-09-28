@@ -91,18 +91,26 @@ type DisputeScores = { scores: { id: string; fulfilledPct: number; rationale: st
 type Reasoning = { dealId: number; sowHash: string; deliveryHash: string; evidenceHash: string;
   scores: DisputeScores["scores"]; buyerBps: number; model: string; promptVersion: string };
 
-// shared/src/verify.ts verifyRuling() — run it in the browser too (with split.wasm, on-chain hash read from MST directly).
-type VerifyResult = {
-  hashMatches: boolean;              // hashJson(reasoning) === on-chain reasoningHash
-  bpsMatchesFormula: boolean;        // reasoning.buyerBps === computeBuyerBps(sow.deliverables, scores)
-  bpsMatchesOnchain: boolean | null; // reasoning.buyerBps === on-chain proposedBuyerBps (null if not supplied)
-  wasmMatchesTs: boolean | null;     // split.wasm result === split.ts result (null if no wasm)
-  sowMatches: boolean;               // reasoning.sowHash === hashSow(sow)
-  recomputedHash: string; recomputedBps: number | null; ok: boolean };
+// Agent rulings omit `source` (missing = "agent"), so their hashes are unchanged. Arbitrator rulings are stored by B1
+// under the reasoningHash passed to arbitrate(): { source: "arbitrator", dealId, sowHash, buyerBps, ruling, ...extra }.
+type ArbitratorReasoning = { source: "arbitrator"; dealId: number; sowHash: string; buyerBps: number; ruling: string; [extra: string]: unknown };
 
-type Onchain = { reasoningHash: string; proposedBuyerBps: number; status: Deal["status"] | "None" };
+// shared/src/verify.ts verifyRuling() — run it in the browser too (with split.wasm, on-chain hash read from MST directly).
+// Input: { reasoning, onchainReasoningHash, onchainProposedBps?, settled?: { toBuyer, amount }, sow, wasm? }
+type VerifyResult = {
+  source: "agent" | "arbitrator";
+  hashMatches: boolean;              // hashJson(reasoning) === on-chain reasoningHash
+  bpsMatchesFormula: boolean | null; // agent: buyerBps === computeBuyerBps(sow.deliverables, scores); arbitrator: null (human decision)
+  bpsMatchesOnchain: boolean | null; // agent: buyerBps === on-chain proposedBuyerBps; arbitrator: null (arbitrate() leaves it stale)
+  settledMatches: boolean | null;    // floor(amount × buyerBps / 10000) === Settled.toBuyer (null if no settlement)
+  wasmMatchesTs: boolean | null;     // split.wasm result === split.ts result (null if no wasm, or arbitrator)
+  sowMatches: boolean;               // reasoning.sowHash === hashSow(sow)
+  recomputedHash: string; recomputedBps: number | null; ok: boolean }; // ok = no applicable check is false
+
+type Onchain = { reasoningHash: string; proposedBuyerBps: number; status: Deal["status"] | "None";
+  settled?: { toBuyer: string; toSeller: string } }; // from the Settled event, only when status is "Resolved"
 type VerifyResponse =
-  | { dealId: number; source: "agent"; verifiable: true; reasoning: Reasoning; sow: SOW; onchain: Onchain; result: VerifyResult }
-  | { dealId: number; source: "agent"; verifiable: false; reason: string; reasoning: Reasoning; onchain: Onchain } // no linked SOW
+  | { dealId: number; source: "agent" | "arbitrator"; verifiable: true; reasoning: Reasoning | ArbitratorReasoning; sow: SOW; onchain: Onchain; result: VerifyResult }
+  | { dealId: number; source: "agent" | "arbitrator"; verifiable: false; reason: string; reasoning: Reasoning | ArbitratorReasoning; onchain: Onchain } // no linked SOW
   | { dealId: number; source: "arbitrator-or-unknown"; verifiable: false; onchain: Onchain }; // hash not in dispute_rulings
 ```
