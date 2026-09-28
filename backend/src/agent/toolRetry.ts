@@ -4,7 +4,7 @@ import { LlmOutputError, type LlmClient, type ToolDef } from "./llm";
 export const MAX_ATTEMPTS = 2; // first try + one retry
 
 export type Validated<T> = { ok: true; value: T } | { ok: false; issues: string[] };
-export type AttemptLog = { attempt: number; model: string; request: unknown; response?: unknown; error?: string };
+export type AttemptLog = { attempt: number; provider: string; model: string; request: unknown; response?: unknown; error?: string };
 
 /** Output never validated after MAX_ATTEMPTS. */
 export class AgentValidationError extends Error {
@@ -24,6 +24,7 @@ export async function callToolWithRetry<T>(opts: {
   onAttempt?: (a: AttemptLog) => void;
 }): Promise<T> {
   const { llm, system, tool } = opts;
+  const who = { provider: llm.provider ?? "unknown", model: llm.model };
   let issues: string[] = [];
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const prompt =
@@ -37,7 +38,7 @@ export async function callToolWithRetry<T>(opts: {
       raw = await llm.callTool({ system, prompt, tool });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      opts.onAttempt?.({ attempt, model: llm.model, request, error: msg });
+      opts.onAttempt?.({ attempt, ...who, request, error: msg });
       if (err instanceof LlmOutputError) {
         issues = [msg];
         continue;
@@ -46,7 +47,7 @@ export async function callToolWithRetry<T>(opts: {
     }
 
     const v = opts.validate(raw);
-    opts.onAttempt?.({ attempt, model: llm.model, request, response: raw, ...(v.ok ? {} : { error: v.issues.join("; ") }) });
+    opts.onAttempt?.({ attempt, ...who, request, response: raw, ...(v.ok ? {} : { error: v.issues.join("; ") }) });
     if (v.ok) return v.value;
     issues = v.issues;
   }

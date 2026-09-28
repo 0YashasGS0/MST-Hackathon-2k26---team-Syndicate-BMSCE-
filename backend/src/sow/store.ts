@@ -45,6 +45,7 @@ export type AgentCall = {
   subject: string; // "draft:<id>" or "deal:<id>"
   kind: string;
   attempt: number;
+  provider: string;
   model: string;
   promptVersion: string;
   request: unknown;
@@ -90,6 +91,7 @@ CREATE TABLE IF NOT EXISTS agent_calls (
   subject        TEXT NOT NULL,
   kind           TEXT NOT NULL,
   attempt        INTEGER NOT NULL,
+  provider       TEXT NOT NULL DEFAULT 'unknown',
   model          TEXT NOT NULL,
   prompt_version TEXT NOT NULL,
   request_json   TEXT NOT NULL,
@@ -151,6 +153,9 @@ export class SowStore {
     }
     this.db.pragma("foreign_keys = ON");
     this.db.exec(SCHEMA);
+    // Older local DBs created agent_calls without `provider`.
+    const cols = this.db.prepare(`PRAGMA table_info(agent_calls)`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === "provider")) this.db.exec(`ALTER TABLE agent_calls ADD COLUMN provider TEXT NOT NULL DEFAULT 'unknown'`);
   }
 
   createDraft(input: NewDraft, now: number): Draft {
@@ -252,13 +257,14 @@ export class SowStore {
   logAgentCall(call: AgentCall, now: number): void {
     this.db
       .prepare(
-        `INSERT INTO agent_calls (subject, kind, attempt, model, prompt_version, request_json, response_json, error, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO agent_calls (subject, kind, attempt, provider, model, prompt_version, request_json, response_json, error, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         call.subject,
         call.kind,
         call.attempt,
+        call.provider,
         call.model,
         call.promptVersion,
         JSON.stringify(call.request),

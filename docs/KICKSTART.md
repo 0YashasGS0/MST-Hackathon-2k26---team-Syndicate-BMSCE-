@@ -44,7 +44,7 @@ An **AI-mediated escrow payment gateway on MST Blockchain**, built by Team Kerne
 - **Backend:** Node, Express, TypeScript, SQLite, viem
 - **Frontend:** Next.js, Tailwind, viem
 - **Shared code** (`shared/`): `src/sow.ts` (SOW schema), `src/hash.ts` (`hashSow`: RFC 8785 canonical JSON → keccak256), and later `split.ts` / `split.wasm` (the split formula)
-- **AI:** an LLM API called only from the backend, with tool-forced JSON output, temperature 0, and a versioned prompt
+- **AI:** Google Gemini via `@google/genai` (default), with Anthropic as an option (`LLM_PROVIDER`). Called only from the backend, with function-call-forced JSON output (mode `ANY`), temperature 0, zod validation plus one retry, and a versioned prompt
 
 ## MST facts
 

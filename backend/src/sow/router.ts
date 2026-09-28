@@ -2,7 +2,8 @@
 import express, { type Request, type Response, type NextFunction, type Router } from "express";
 import { z } from "zod";
 import { hashSow, parseSow } from "@kernel-exploits/shared";
-import { llmFromEnv, type LlmClient } from "../agent/llm";
+import { createLlmClient } from "../agent/createLlmClient";
+import type { LlmClient } from "../agent/llm";
 import { LlmUnavailableError, MERGE_PROMPT_VERSION, SowMergeError, mergeSow } from "../agent/mergeSow";
 import { getCaller } from "./auth";
 import { SowStore, type Draft } from "./store";
@@ -82,7 +83,7 @@ export function createSowRouter(deps: SowRouterDeps = {}): Router {
       escrowAddress: requireEnv("ESCROW_ADDRESS", process.env.ESCROW_ADDRESS, (v) => ADDRESS_RE.test(v)),
     });
   const store = deps.store ?? new SowStore();
-  const llm = deps.llm ?? llmFromEnv();
+  const llm = deps.llm ?? createLlmClient(); // throws at startup on bad LLM_PROVIDER / missing gemini LLM_MODEL
   const demoFallback = deps.demoFallback ?? process.env.AGENT_DEMO_FALLBACK === "true";
   const now = deps.now ?? (() => Math.floor(Date.now() / 1000));
 

@@ -6,10 +6,13 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "smoke:merge": "tsx scripts/smoke-merge.ts"
+    "smoke:merge": "tsx scripts/smoke-merge.ts",
+    "smoke:score": "tsx scripts/smoke-score.ts",
+    "models": "tsx scripts/list-models.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",
+    "@google/genai": "^2.24.0",
     "@kernel-exploits/shared": "file:../shared",
     "better-sqlite3": "^13.0.3",
     "dotenv": "^18.0.4",

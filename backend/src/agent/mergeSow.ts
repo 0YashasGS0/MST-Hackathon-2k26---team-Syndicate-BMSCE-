@@ -60,10 +60,12 @@ export const MERGE_TOOL: ToolDef = {
     additionalProperties: false,
     required: ["title", "deliverables", "exclusions", "conflicts"],
     properties: {
-      title: { type: "string", description: "Short title of the work, max 200 chars" },
+      title: { type: "string", minLength: 1, maxLength: 200, description: "Short title of the work, max 200 chars" },
       deliverables: {
         type: "array",
         description: `1-20 deliverables. weightBps are integers that MUST sum to exactly ${TOTAL_BPS}.`,
+        minItems: 1,
+        maxItems: 20,
         items: {
           type: "object",
           additionalProperties: false,
@@ -73,11 +75,11 @@ export const MERGE_TOOL: ToolDef = {
             title: { type: "string" },
             description: { type: "string" },
             acceptanceCriteria: { type: "array", items: { type: "string" }, description: "Measurable, checkable criteria" },
-            weightBps: { type: "integer", description: "Share of the price in basis points (1-10000)" },
+            weightBps: { type: "integer", minimum: 1, maximum: TOTAL_BPS, description: "Share of the price in basis points (1-10000)" },
           },
         },
       },
-      exclusions: { type: "array", items: { type: "string" }, description: "Explicitly out-of-scope items (may be empty)" },
+      exclusions: { type: "array", maxItems: 20, items: { type: "string" }, description: "Explicitly out-of-scope items (may be empty)" },
       conflicts: {
         type: "array",
         items: { type: "string" },

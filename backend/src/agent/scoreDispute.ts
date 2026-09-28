@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { computeBuyerBps, hashJson, hashSow, parseSow, type Sow } from "@kernel-exploits/shared";
 import { SowStore } from "../sow/store";
-import { llmFromEnv, type LlmClient, type ToolDef } from "./llm";
+import type { LlmClient, ToolDef } from "./llm";
 import { AgentValidationError, LlmUnavailableError, callToolWithRetry, escapeData } from "./toolRetry";
 
 export { AgentValidationError as DisputeScoringError, LlmUnavailableError };
@@ -36,7 +36,7 @@ export type Reasoning = {
 export type Ruling = { scores: Score[]; buyerBps: number; reasoningHash: string; model: string; promptVersion: string };
 
 export type ScorerDeps = {
-  llm?: LlmClient;
+  llm?: LlmClient; // required unless demoFallback (agent/index.ts fills it from env via createLlmClient)
   demoFallback?: boolean; // default env AGENT_DEMO_FALLBACK === "true"
   promptVersion?: string; // default env AGENT_PROMPT_VERSION || "v1"
   store?: SowStore; // default: shared DB at DB_PATH
@@ -69,16 +69,19 @@ export const SCORE_TOOL: ToolDef = {
       scores: {
         type: "array",
         description: "Exactly one entry per SOW deliverable id. No other ids.",
+        minItems: 1,
+        maxItems: 20,
         items: {
           type: "object",
           additionalProperties: false,
           required: ["id", "fulfilledPct", "rationale", "evidenceRefs"],
           properties: {
             id: { type: "string", description: "Deliverable id from the SOW" },
-            fulfilledPct: { type: "integer", description: "How far the acceptance criteria were met, integer 0-100" },
-            rationale: { type: "string", description: "Short, neutral reasoning that refers to specific acceptance criteria" },
+            fulfilledPct: { type: "integer", minimum: 0, maximum: 100, description: "How far the acceptance criteria were met, integer 0-100" },
+            rationale: { type: "string", minLength: 1, maxLength: 2000, description: "Short, neutral reasoning that refers to specific acceptance criteria" },
             evidenceRefs: {
               type: "array",
+              maxItems: 20,
               items: { type: "string" },
               description: 'Which inputs support this score: "delivery_notes", "complaint", "evidence_notes", or file names/ids mentioned in them',
             },
@@ -123,8 +126,8 @@ export async function scoreDispute(input: DisputeInput, deps: ScorerDeps = {}): 
     }));
     model = "demo-fallback";
   } else {
-    const llm = deps.llm ?? llmFromEnv();
-    if (!llm) throw new LlmUnavailableError("LLM_API_KEY is not configured (or set AGENT_DEMO_FALLBACK=true)");
+    const llm = deps.llm;
+    if (!llm) throw new LlmUnavailableError("no LLM client configured (set LLM_API_KEY, or AGENT_DEMO_FALLBACK=true)");
     model = llm.model;
     scores = await callToolWithRetry({
       llm,
