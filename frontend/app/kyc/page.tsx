@@ -1,72 +1,91 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useSession } from "@/components/session";
+// First-time only: AuthGate routes here until kycLevel > 0, and never again after.
+import { useState } from "react";
 import { api } from "@/lib/api";
-import type { User } from "@/lib/types";
-import { Badge, Button, Card, Field, inputCls, MockNote, PageHeader, TxLink } from "@/components/ui";
-
-const levels = [
-  { level: 0, label: "Not verified", tone: "neutral" as const },
-  { level: 1, label: "Level 1 · documents submitted", tone: "info" as const },
-  { level: 2, label: "Level 2 · approved on-chain", tone: "success" as const },
-];
+import { useSession, useUser } from "@/components/session";
+import { Logo } from "@/components/Header";
+import { Button, Card, Field, inputCls, Screen } from "@/components/ui";
 
 export default function KycPage() {
-  const { address } = useSession();
-  const [user, setUser] = useState<User>();
+  const user = useUser();
+  const { updateUser, signOut } = useSession();
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (address) api.getUser(address).then(setUser);
-  }, [address]);
+  const [error, setError] = useState<string>();
+  const [fileName, setFileName] = useState<string>();
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!address) return;
     setBusy(true);
-    const form = new FormData(e.currentTarget);
-    form.set("address", address);
-    setUser(await api.submitKyc(form));
-    setBusy(false);
+    setError(undefined);
+    try {
+      const form = new FormData(e.currentTarget);
+      form.set("phone", user.phone);
+      updateUser(await api.submitKyc(form)); // AuthGate then moves on to /home
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setBusy(false);
+    }
   }
 
-  const lvl = levels[user?.kycLevel ?? 0];
-
   return (
-    <div className="mx-auto max-w-2xl">
-      <PageHeader title="Verify your identity" subtitle="Required before you can create or accept a deal." />
+    <>
+      <header className="border-b border-line bg-surface">
+        <div className="mx-auto flex h-16 max-w-2xl items-center justify-between px-4 sm:px-6">
+          <Logo />
+          <button onClick={() => signOut()} className="text-sm text-muted hover:text-foreground">
+            Log out
+          </button>
+        </div>
+      </header>
 
-      <Card title="Status" actions={<Badge tone={lvl.tone}>{lvl.label}</Badge>}>
-        <ol className="space-y-2 text-sm">
-          <li>1. Upload an ID document (mock — any file works).</li>
-          <li>2. An admin approves it; the approval is written on MST via <code>setKyc</code>.</li>
-        </ol>
-        {user?.kycTx && (
-          <p className="mt-3 text-sm">
-            Approval transaction: <TxLink hash={user.kycTx} />
-          </p>
-        )}
-      </Card>
+      <Screen className="pt-8">
+        <p className="text-sm font-medium text-accent">One-time setup</p>
+        <h1 className="mt-1 text-2xl font-semibold">Verify your identity</h1>
+        <p className="mt-1 text-sm text-muted">
+          Needed once so everyone you pay, or get paid by, is a verified person. It takes a minute.
+        </p>
 
-      <Card title="Submit documents" className="mt-4">
-        {!address ? (
-          <p className="text-sm text-muted">Connect your wallet first.</p>
-        ) : (
-          <form onSubmit={submit} className="space-y-4">
-            <Field label="Full name">
-              <input name="name" required className={inputCls} placeholder="As on your ID" />
+        <Card className="mt-6">
+          <form onSubmit={submit} className="space-y-5">
+            <Field label="Full name" hint="As on your ID">
+              <input name="name" required autoComplete="name" className={inputCls} placeholder="Priya Sharma" />
             </Field>
-            <Field label="Phone">
-              <input name="phone" required className={inputCls} placeholder="+91…" />
+            <Field label="PAN number">
+              <input
+                name="pan"
+                required
+                maxLength={10}
+                pattern="[A-Za-z]{5}[0-9]{4}[A-Za-z]"
+                title="10 characters, e.g. ABCDE1234F"
+                className={inputCls + " uppercase tracking-wider"}
+                placeholder="ABCDE1234F"
+              />
             </Field>
-            <Field label="ID document" hint="PDF or image">
-              <input name="file" type="file" required className="text-sm" />
-            </Field>
-            <Button disabled={busy || (user?.kycLevel ?? 0) >= 1}>{busy ? "Uploading…" : "Submit for review"}</Button>
+            <div>
+              <span className="mb-1.5 block text-sm font-medium">ID document</span>
+              <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line p-4 hover:bg-surface-2">
+                <span className="grid h-10 w-10 place-items-center rounded-full bg-accent/15 text-accent">↑</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">{fileName ?? "Upload Aadhaar, PAN or passport"}</span>
+                  <span className="block text-xs text-muted">Photo or PDF</span>
+                </span>
+                <input
+                  name="file"
+                  type="file"
+                  required
+                  accept="image/*,application/pdf"
+                  className="sr-only"
+                  onChange={(e) => setFileName(e.target.files?.[0]?.name)}
+                />
+              </label>
+            </div>
+            {error && <p className="text-sm text-danger">{error}</p>}
+            <Button size="lg" className="w-full" disabled={busy}>
+              {busy ? "Verifying…" : "Submit & continue"}
+            </Button>
           </form>
-        )}
-        <MockNote>submission is stored in memory; Level 2 needs the admin approve endpoint (B1).</MockNote>
-      </Card>
-    </div>
+        </Card>
+      </Screen>
+    </>
   );
 }

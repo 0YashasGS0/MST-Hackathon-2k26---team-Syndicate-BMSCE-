@@ -4,12 +4,15 @@ import type { Address, Hex } from "viem";
 import * as mock from "./mocks";
 import type {
   ApproveSowResult,
+  Complaint,
   Deal,
   Draft,
+  NewDraft,
   OnrampConfirm,
   OnrampSession,
   PaymentInfo,
   Resolution,
+  Sow,
   SowVersion,
   User,
   VerifyResult,
@@ -43,16 +46,27 @@ async function http<T>(method: string, path: string, body?: unknown): Promise<T>
 const call = <T>(key: string, live: () => Promise<T>, fake: () => Promise<T>) => (isLive(key) ? live() : fake());
 
 export const api = {
-  // ---- auth / KYC (B1, PG) ----
-  login: (address: Address) =>
-    call<User>("login", () => http("POST", "/auth/wallet", { address }), () => mock.login(address)),
-  getUser: (address: Address) =>
-    call<User>("getUser", () => http("GET", `/users/${address}`), () => mock.getUser(address)),
+  // ---- auth / KYC (PG, B1) ----
+  // Phone + OTP via SARAL; the account is bound to one device (deviceId), like UPI.
+  requestOtp: (phone: string) =>
+    call<{ sent: true }>("requestOtp", () => http("POST", "/auth/otp", { phone }), () => mock.requestOtp(phone)),
+  verifyOtp: (phone: string, otp: string, deviceId: string) =>
+    call<User>(
+      "verifyOtp",
+      () => http("POST", "/auth/saral", { phone, otp, deviceId }),
+      () => mock.verifyOtp(phone, otp, deviceId),
+    ),
+  checkDevice: (phone: string, deviceId: string) =>
+    call<{ valid: boolean }>(
+      "checkDevice",
+      () => http("POST", "/auth/device", { phone, deviceId }),
+      () => mock.checkDevice(phone, deviceId),
+    ),
   submitKyc: (form: FormData) =>
-    call<User>("submitKyc", () => http("POST", "/kyc/submit", form), () => mock.submitKyc(form)),
+    call<Pick<User, "kycLevel" | "name">>("submitKyc", () => http("POST", "/kyc/submit", form), () => mock.submitKyc(form)),
 
   // ---- negotiation / SOW (B2) ----
-  createDraft: (d: { seller: string; purpose: string; price: string; buyerConstraints: string }) =>
+  createDraft: (d: NewDraft) =>
     call<Draft>("createDraft", () => http("POST", "/deals", d), () => mock.createDraft(d)),
   listDrafts: (address: Address) =>
     call<Draft[]>("listDrafts", () => http("GET", `/drafts?address=${address}`), () => mock.listDrafts(address)),
@@ -74,11 +88,17 @@ export const api = {
       () => http("POST", `/deals/${draftId}/approve-sow`, { party, version }),
       () => mock.approveSow(draftId, party, version),
     ),
+  // TODO(FE): replace with proposeDeal / acceptDeal signed through SARAL once the ABI lands.
+  startDeal: (draftId: string) =>
+    call<{ dealId: string }>("startDeal", () => http("POST", `/deals/${draftId}/start`), () => mock.startDeal(draftId)),
 
   // ---- deals (B1) ----
   listDeals: (address: Address) =>
     call<Deal[]>("listDeals", () => http("GET", `/deals?address=${address}`), () => mock.listDeals(address)),
   getDeal: (id: string) => call<Deal>("getDeal", () => http("GET", `/deals/${id}`), () => mock.getDeal(id)),
+  getDealSow: (id: string) => call<Sow>("getDealSow", () => http("GET", `/deals/${id}/sow`), () => mock.getDealSow(id)),
+  // TODO(FE): release / acceptResolution / escalate become contract calls signed through SARAL.
+  release: (id: string) => call<Deal>("release", () => http("POST", `/deals/${id}/release`), () => mock.release(id)),
   uploadDelivery: (id: string, form: FormData) =>
     call<{ hash: Hex }>("uploadDelivery", () => http("POST", `/deals/${id}/delivery`, form), mock.fileHash),
   uploadEvidence: (id: string, form: FormData) =>
@@ -92,17 +112,18 @@ export const api = {
   getPayment: (id: string) =>
     call<PaymentInfo>("getPayment", () => http("GET", `/deals/${id}/payment`), () => mock.getPayment(id)),
 
-  // ---- disputes (B1 + B2) ----
+  // ---- complaints / disputes (B1 + B2) ----
+  raiseComplaint: (id: string, form: FormData) =>
+    call<Complaint>("raiseComplaint", () => http("POST", `/deals/${id}/evidence`, form), () => mock.raiseComplaint(id, form)),
+  getComplaint: (id: string) =>
+    call<Complaint | null>("getComplaint", () => http("GET", `/deals/${id}/complaint`), () => mock.getComplaint(id)),
+  acceptResolution: (id: string) =>
+    call<Deal>("acceptResolution", () => http("POST", `/deals/${id}/accept`), () => mock.acceptResolution(id)),
+  escalate: (id: string) => call<Deal>("escalate", () => http("POST", `/deals/${id}/escalate`), () => mock.escalate(id)),
   resolve: (id: string) =>
     call<Resolution>("resolve", () => http("POST", `/deals/${id}/resolve`), () => mock.resolve(id)),
   getResolution: (id: string) =>
     call<Resolution>("getResolution", () => http("GET", `/deals/${id}/resolution`), () => mock.getResolution(id)),
   verify: (id: string) =>
     call<VerifyResult>("verify", () => http("GET", `/deals/${id}/verify`), () => mock.verify(id)),
-  arbitrate: (id: string, buyerBps: number, adminToken: string) =>
-    call<{ txHash: Hex }>(
-      "arbitrate",
-      () => http("POST", `/arbitrator/deals/${id}/rule`, { buyerBps, adminToken }),
-      () => mock.arbitrate(id, buyerBps),
-    ),
 };

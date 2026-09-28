@@ -1,79 +1,64 @@
 "use client";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { mst } from "@/lib/chain";
-import { shortHex } from "@/lib/format";
-import { useSession } from "./session";
+import { useEffect, useRef, useState } from "react";
+import { maskPhone } from "@/lib/format";
+import { useUser, useSession } from "./session";
+import { Avatar } from "./ui";
 
 export const APP_NAME = "Sakshi"; // working name — TBD
 
-const nav = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/deals/new", label: "New deal" },
-  { href: "/kyc", label: "KYC" },
-  { href: "/arbitrator", label: "Arbitrator" },
-];
+export function Logo() {
+  return (
+    <span className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+      {/* eslint-disable-next-line @next/next/no-img-element -- tiny static svg */}
+      <img src="/icon.svg" alt="" className="h-8 w-8" />
+      {APP_NAME}
+    </span>
+  );
+}
 
+/** Home screen header: logo and profile menu. Inner screens use <BackBar>. */
 export function Header() {
-  const path = usePathname();
-  const { address, connecting, connect, disconnect } = useSession();
+  const user = useUser();
+  const { signOut } = useSession();
+  const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLDivElement>(null);
+  const name = user.name ?? "My account";
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => menu.current && !menu.current.contains(e.target as Node) && setOpen(false);
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
 
   return (
-    <header className="sticky top-0 z-10 border-b border-line bg-surface/85 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4">
-        <Link href="/" className="flex items-center gap-2 font-semibold">
-          <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent text-sm text-accent-fg">S</span>
-          {APP_NAME}
-        </Link>
-
-        <nav className="hidden items-center gap-1 md:flex">
-          {nav.map((n) => {
-            const active = path === n.href || (n.href !== "/" && path.startsWith(n.href + "/"));
-            return (
-              <Link
-                key={n.href}
-                href={n.href}
-                className={`rounded-md px-3 py-1.5 text-sm ${active ? "bg-surface-2 font-medium" : "text-muted hover:text-foreground"}`}
+    <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
+      <div className="mx-auto flex h-16 max-w-2xl items-center justify-between px-4 sm:px-6">
+        <Logo />
+        <div className="relative" ref={menu}>
+          <button onClick={() => setOpen((o) => !o)} aria-label="Profile" className="rounded-full ring-accent/30 focus:ring-4">
+            <Avatar name={name} size="sm" />
+          </button>
+          {open && (
+            <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-line bg-surface p-2 shadow-lg">
+              <div className="flex items-center gap-3 p-2">
+                <Avatar name={name} />
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{name}</p>
+                  <p className="text-xs text-muted">{maskPhone(user.phone)}</p>
+                </div>
+              </div>
+              <p className="px-2 pb-2 text-xs text-muted">This device is registered to your number.</p>
+              <button
+                onClick={() => signOut()}
+                className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-danger hover:bg-danger/10"
               >
-                {n.label}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="ml-auto flex items-center gap-2">
-          <span className="hidden items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-xs text-muted sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-success" />
-            {mst.name}
-          </span>
-          {address ? (
-            <button
-              onClick={disconnect}
-              title="Disconnect"
-              className="rounded-lg border border-line px-3 py-1.5 font-mono text-xs hover:bg-surface-2"
-            >
-              {shortHex(address)}
-            </button>
-          ) : (
-            <button
-              onClick={connect}
-              disabled={connecting}
-              className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg disabled:opacity-50"
-            >
-              {connecting ? "Connecting…" : "Connect wallet"}
-            </button>
+                Log out of this device
+              </button>
+            </div>
           )}
         </div>
       </div>
-
-      {/* mobile nav */}
-      <nav className="flex gap-1 overflow-x-auto border-t border-line px-4 py-2 md:hidden">
-        {nav.map((n) => (
-          <Link key={n.href} href={n.href} className="whitespace-nowrap rounded-md px-3 py-1 text-sm text-muted">
-            {n.label}
-          </Link>
-        ))}
-      </nav>
     </header>
   );
 }

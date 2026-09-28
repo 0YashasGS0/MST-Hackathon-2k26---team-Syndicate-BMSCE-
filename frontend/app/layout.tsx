@@ -1,7 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Header } from "@/components/Header";
-import { SessionProvider } from "@/components/session";
+import { AuthGate, SessionProvider } from "@/components/session";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -15,20 +14,27 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sakshi — escrow on MST",
-  description: "AI-mediated escrow payment gateway on MST Blockchain",
+  title: "Sakshi",
+  description: "Pay for work safely. Your money is held until the job is done.",
+  appleWebApp: { capable: true, title: "Sakshi", statusBarStyle: "default" },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#15151a" },
+  ],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col font-sans">
+      <body className="min-h-dvh font-sans">
         <SessionProvider>
-          <Header />
-          <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
-          <footer className="border-t border-line py-4 text-center text-xs text-muted">
-            Team Kernel Exploits · MST X Newrro Hackathon 2k26 · AI proposes, only the contract moves money
-          </footer>
+          <AuthGate>{children}</AuthGate>
         </SessionProvider>
       </body>
     </html>

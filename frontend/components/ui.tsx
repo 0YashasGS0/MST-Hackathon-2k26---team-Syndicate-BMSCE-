@@ -2,33 +2,45 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 import type { DealStatus } from "@/lib/types";
-import { addressUrl, shortHex, txUrl } from "@/lib/format";
+import { initials, statusText, type Tone } from "@/lib/format";
 
-const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
+export const cx = (...c: (string | false | undefined | null)[]) => c.filter(Boolean).join(" ");
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
+/** Centred column: full width on phones, a comfortable reading width on laptops. */
+export function Screen({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cx("mx-auto w-full max-w-2xl px-4 pb-16 sm:px-6", className)}>{children}</div>;
+}
+
+/** App bar for inner screens: back arrow + title, like a UPI app. */
+export function BackBar({ href, title, right }: { href: string; title?: string; right?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
+    <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
+      <div className="mx-auto flex h-14 max-w-2xl items-center gap-2 px-2 sm:px-4">
+        <Link href={href} aria-label="Back" className="grid h-10 w-10 place-items-center rounded-full hover:bg-surface-2">
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </Link>
+        <h1 className="flex-1 truncate text-base font-semibold">{title}</h1>
+        {right}
       </div>
-      {actions && <div className="flex gap-2">{actions}</div>}
-    </div>
+    </header>
   );
 }
 
-export function Card({ title, actions, children, className }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
+/** `flush` drops the padding, for cards whose rows are links with their own padding. */
+export function Card({ children, className, flush }: { children: ReactNode; className?: string; flush?: boolean }) {
   return (
-    <section className={cx("rounded-xl border border-line bg-surface p-5", className)}>
-      {(title || actions) && (
-        <div className="mb-4 flex items-center justify-between gap-3">
-          {title && <h2 className="text-base font-semibold">{title}</h2>}
-          {actions}
-        </div>
-      )}
-      {children}
-    </section>
+    <section className={cx("rounded-2xl border border-line bg-surface", !flush && "p-4 sm:p-5", className)}>{children}</section>
+  );
+}
+
+export function SectionTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
+  return (
+    <div className="mb-3 mt-8 flex items-center justify-between px-1">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">{children}</h2>
+      {right}
+    </div>
   );
 }
 
@@ -37,19 +49,22 @@ const variants: Record<Variant, string> = {
   primary: "bg-accent text-accent-fg hover:opacity-90",
   secondary: "border border-line bg-surface hover:bg-surface-2",
   danger: "border border-danger/40 text-danger hover:bg-danger/10",
-  ghost: "hover:bg-surface-2",
+  ghost: "text-accent hover:bg-accent/10",
 };
-const btn = "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50";
+const sizes = { md: "px-4 py-2.5 text-sm", lg: "px-5 py-3.5 text-base", sm: "px-3 py-1.5 text-xs" };
+const btn =
+  "inline-flex items-center justify-center gap-2 rounded-full font-semibold transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50";
 
-export function Button({ variant = "primary", className, ...p }: ComponentProps<"button"> & { variant?: Variant }) {
-  return <button className={cx(btn, variants[variant], className)} {...p} />;
+type BtnProps = { variant?: Variant; size?: keyof typeof sizes };
+
+export function Button({ variant = "primary", size = "md", className, ...p }: ComponentProps<"button"> & BtnProps) {
+  return <button className={cx(btn, variants[variant], sizes[size], className)} {...p} />;
 }
 
-export function ButtonLink({ variant = "primary", className, ...p }: ComponentProps<typeof Link> & { variant?: Variant }) {
-  return <Link className={cx(btn, variants[variant], className)} {...p} />;
+export function ButtonLink({ variant = "primary", size = "md", className, ...p }: ComponentProps<typeof Link> & BtnProps) {
+  return <Link className={cx(btn, variants[variant], sizes[size], className)} {...p} />;
 }
 
-type Tone = "neutral" | "accent" | "success" | "warning" | "danger" | "info";
 const tones: Record<Tone, string> = {
   neutral: "bg-surface-2 text-muted",
   accent: "bg-accent/15 text-accent",
@@ -63,46 +78,17 @@ export function Badge({ tone = "neutral", children }: { tone?: Tone; children: R
   return <span className={cx("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium", tones[tone])}>{children}</span>;
 }
 
-const statusTone: Record<DealStatus, Tone> = {
-  Proposed: "neutral",
-  Accepted: "info",
-  Funded: "accent",
-  Delivered: "info",
-  Disputed: "warning",
-  ResolutionProposed: "warning",
-  Escalated: "danger",
-  Released: "success",
-  Refunded: "success",
-  Split: "success",
-};
-const statusLabel: Partial<Record<DealStatus, string>> = { ResolutionProposed: "Resolution proposed" };
-
 export function StatusChip({ status }: { status: DealStatus }) {
-  return <Badge tone={statusTone[status]}>{statusLabel[status] ?? status}</Badge>;
+  const s = statusText[status];
+  return <Badge tone={s.tone}>{s.label}</Badge>;
 }
 
-export function TxLink({ hash, label }: { hash: string; label?: string }) {
-  return (
-    <a href={txUrl(hash)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-mono text-xs text-accent hover:underline">
-      {label ?? shortHex(hash)} ↗
-    </a>
-  );
-}
+const avatarColors = ["bg-emerald-600", "bg-sky-600", "bg-violet-600", "bg-amber-600", "bg-rose-600", "bg-teal-600"];
 
-export function AddressLink({ address }: { address: string }) {
-  return (
-    <a href={addressUrl(address)} target="_blank" rel="noreferrer" className="font-mono text-xs text-accent hover:underline">
-      {shortHex(address)}
-    </a>
-  );
-}
-
-export function Hash({ value }: { value: string }) {
-  return (
-    <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs" title={value}>
-      {shortHex(value, 6)}
-    </code>
-  );
+export function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg" }) {
+  const color = avatarColors[[...name].reduce((s, c) => s + c.charCodeAt(0), 0) % avatarColors.length];
+  const dim = { sm: "h-8 w-8 text-xs", md: "h-11 w-11 text-sm", lg: "h-16 w-16 text-xl" }[size];
+  return <span className={cx("grid shrink-0 place-items-center rounded-full font-semibold text-white", color, dim)}>{initials(name)}</span>;
 }
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
@@ -116,28 +102,32 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 }
 
 export const inputCls =
-  "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent/20";
-
-export function Stat({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
-  return (
-    <div>
-      <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
-      <div className="mt-1 text-xl font-semibold">{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
-    </div>
-  );
-}
+  "w-full rounded-xl border border-line bg-surface px-3.5 py-3 text-base outline-none placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent/20 sm:text-sm";
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div className="rounded-xl border border-dashed border-line p-10 text-center">
+    <div className="rounded-2xl border border-dashed border-line p-8 text-center">
       <p className="font-medium">{title}</p>
-      {children && <div className="mt-2 text-sm text-muted">{children}</div>}
+      {children && <div className="mt-1 text-sm text-muted">{children}</div>}
     </div>
   );
 }
 
-/** Marks UI that is wired to mocks, so nobody mistakes it for live data during the build. */
-export function MockNote({ children }: { children: ReactNode }) {
-  return <p className="mt-3 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">Mock: {children}</p>;
+export function Loading({ label = "Loading…" }: { label?: string }) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-line border-t-accent" />
+      {label}
+    </div>
+  );
+}
+
+/** Label / value row for detail sheets. */
+export function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-3">
+      <dt className="text-sm text-muted">{label}</dt>
+      <dd className="text-right text-sm font-medium">{children}</dd>
+    </div>
+  );
 }
