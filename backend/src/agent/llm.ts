@@ -6,6 +6,11 @@ export type ToolDef = {
   name: string;
   description: string;
   input_schema: { type: "object"; properties: Record<string, unknown>; required: string[]; additionalProperties?: boolean };
+  /**
+   * Plain-words restatement of constraints, by field path ("scores", "deliverables[].weightBps"), for providers that
+   * must strip validation keywords (Gemini). Never sent as part of the schema itself.
+   */
+  constraintNotes?: Record<string, string>;
 };
 
 export type ToolCallRequest = { system: string; prompt: string; tool: ToolDef };

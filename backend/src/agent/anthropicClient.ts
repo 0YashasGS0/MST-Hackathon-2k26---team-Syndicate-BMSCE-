@@ -1,5 +1,8 @@
 // Anthropic implementation of LlmClient (optional provider: LLM_PROVIDER=anthropic).
 import Anthropic from "@anthropic-ai/sdk";
+
+/** The slice of the SDK we use; injectable so tests can inspect requests. */
+export type AnthropicMessagesApi = Pick<Anthropic["messages"], "create">;
 import { LlmOutputError, type LlmCallInfo, type LlmClient, type ToolCallRequest } from "./llm";
 
 // Models that still accept sampling params. Newer ones (Sonnet 5, Opus 4.7+, Fable) return 400 on temperature.
@@ -10,27 +13,29 @@ const NO_FORCED_TOOL = /^claude-(opus-5-5|fable-5-1|mythos-5-1)/;
 export class AnthropicLlmClient implements LlmClient {
   readonly provider = "anthropic";
   readonly toolMode: string;
-  private readonly client: Anthropic;
+  private readonly messages: AnthropicMessagesApi;
   lastCall?: LlmCallInfo;
 
   constructor(
     readonly model: string,
     apiKey: string,
+    messages?: AnthropicMessagesApi,
   ) {
     // logLevel "warn": never let SDK debug logging print request headers (API key) or prompts.
     // maxRetries 0: transient retries/fallback happen in resilience.ts, where each try is logged.
-    this.client = new Anthropic({ apiKey, logLevel: "warn", maxRetries: 0 });
+    this.messages = messages ?? new Anthropic({ apiKey, logLevel: "warn", maxRetries: 0 }).messages;
     this.toolMode = NO_FORCED_TOOL.test(model) ? "auto (model rejects forced tool_choice)" : "tool (forced)";
   }
 
   async callTool({ system, prompt, tool }: ToolCallRequest): Promise<unknown> {
     const forced = !NO_FORCED_TOOL.test(this.model);
     const started = Date.now();
-    const res = await this.client.messages.create({
+    const res = await this.messages.create({
       model: this.model,
       max_tokens: 8000,
       system,
-      tools: [tool],
+      // Full JSON Schema (with bounds) — Anthropic accepts it; only name/description/input_schema are sent.
+      tools: [{ name: tool.name, description: tool.description, input_schema: tool.input_schema }],
       tool_choice: forced ? { type: "tool", name: tool.name } : { type: "auto" },
       ...(SAMPLING_OK.test(this.model) && { temperature: 0 }),
       messages: [

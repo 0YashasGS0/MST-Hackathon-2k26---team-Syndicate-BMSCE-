@@ -55,6 +55,9 @@ type LlmSowOutput = z.infer<typeof LlmSowOutputSchema>;
 
 export const MERGE_TOOL: ToolDef = {
   name: "submit_sow",
+  constraintNotes: {
+    "deliverables[].weightBps": `Integer 1–${TOTAL_BPS}; all weights must sum to exactly ${TOTAL_BPS}.`,
+  },
   description:
     "Submit the merged Statement of Work: title, weighted deliverables with measurable acceptance criteria, exclusions, and any buyer/seller conflicts.",
   input_schema: {

@@ -62,6 +62,7 @@ const ScoresOutputSchema = z
 
 export const SCORE_TOOL: ToolDef = {
   name: "submit_scores",
+  constraintNotes: { "scores[].fulfilledPct": "Integer from 0 to 100 inclusive." },
   description: "Submit one fulfilment score per SOW deliverable, with a rationale that cites the evidence.",
   input_schema: {
     type: "object",
@@ -93,6 +94,12 @@ export const SCORE_TOOL: ToolDef = {
     },
   },
 };
+
+/** SCORE_TOOL with this SOW's deliverable ids spelled out (for providers that can't enforce list bounds). */
+export function scoreToolFor(sow: Sow): ToolDef {
+  const ids = sow.deliverables.map((d) => d.id).join(", ");
+  return { ...SCORE_TOOL, constraintNotes: { ...SCORE_TOOL.constraintNotes, scores: `Exactly one entry per deliverable id: ${ids}.` } };
+}
 
 const SYSTEM = `You are a neutral escrow arbitrator's assistant. A buyer disputes a delivery. For each deliverable in the agreed Statement of Work (SOW), judge how far its acceptance criteria were met.
 
@@ -135,7 +142,7 @@ export async function scoreDispute(input: DisputeInput, deps: ScorerDeps = {}): 
       llm,
       system: SYSTEM,
       prompt: buildPrompt(sow, input),
-      tool: SCORE_TOOL,
+      tool: scoreToolFor(sow),
       validate: (raw) => validateScores(raw, sow),
       onAttempt: (a) => store.logAgentCall({ subject: `deal:${input.dealId}`, kind: "score-dispute", promptVersion, ...a }, now()),
       backoff: deps.backoff,
