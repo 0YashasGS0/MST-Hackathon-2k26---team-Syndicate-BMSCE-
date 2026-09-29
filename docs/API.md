@@ -7,8 +7,10 @@
 ## Auth & KYC
 | Method | Path | Owner | Body → Response |
 |---|---|---|---|
-| POST | `/auth/saral` | PG | `{ address, saralSessionProof }` → `User` |
-| POST | `/auth/wallet` | PG | `{ address, signature, message }` → `User` (MetaMask fallback) |
+| GET | `/auth/nonce?address=0x..` | PG | → `{ nonce, chainId, domain, issuedAt, expirationTime, messageToSign }` (single-use nonce; expires in 5 minutes) |
+| POST | `/auth/verify` | PG | `{ message, signature }` → `{ user, expiresIn }` plus HttpOnly `mst_session` cookie |
+| POST | `/auth/logout` | PG | — → `204` and clears the session cookie |
+| POST | `/auth/saral` | PG | `{ address, saralSessionProof }` → `503` until mentor docs and a docs-backed verifier are available |
 | POST | `/kyc/submit` | B1 | multipart `file` → `User` |
 | POST | `/admin/kyc/:address/approve` | B1 | header `x-admin-token` → `{ txHash }` |
 
@@ -47,13 +49,40 @@
 ## Payments
 | Method | Path | Owner | Body → Response |
 |---|---|---|---|
-| POST | `/onramp/:dealId/session` | PG | — → `{ paymentId, amountInr, amountUsd, status }` |
-| POST | `/onramp/:dealId/confirm` | PG | — → `{ status, mintTx, fundTx }` (idempotent) |
-| GET | `/deals/:id/payment` | PG | → `{ payment, payout? }` |
+| POST | `/onramp/:dealId/session` | PG | — → `{ paymentId, amountInr, amountUsd, status, upi: { payee, note }, upiUri }` |
+| POST | `/onramp/:dealId/confirm` | PG | `{ method: "upi_qr"|"upi_id"|"upi_app"|"crypto" }` → `{ status, mintTx, fundTx }` (idempotent; mint/fund hashes may be `null` until submitted) |
+| GET | `/deals/:id/payment` | PG | → `{ payment: Payment|null, payout: Payout|null }` |
+
+### PG payment details
+- `amountUsd`, `payment.amount`, `payout.toBuyer`, and `payout.toSeller` are decimal integer strings in MockUSD base units (6 decimals), unless the field name ends in `Formatted`.
+- The demo quote is fixed at ₹84 per 1 MockUSD. The on-ramp session amount is sourced from the on-chain deal; clients do not submit an amount.
+- The UPI payee/note are mock display data only. `/confirm` represents the demo user's confirmation; it is not proof of an external fiat transfer.
+- `upiUri` is a display/QR payload built from the mock payee, note, and INR amount. The required confirmation `method` is stored on the payment row for display only; it does not prove an external transfer or change settlement behavior. Payment history includes `method` as `upi_qr`, `upi_id`, `upi_app`, `crypto`, or `null` before a method is selected.
+- PG payment routes use the shared backend `X-API-Key` middleware. Wallet auth endpoints are public. Wallet login first obtains a server-stored, single-use 5-minute nonce, then signs the returned EIP-4361-style message for chain `91562037`. `/auth/verify` checks the configured `AUTH_DOMAIN`, exact URI, chain, nonce, issue/expiry times, and signature before setting a one-hour `HttpOnly; SameSite=Lax` session cookie (`Secure` in production). Configure `AUTH_SESSION_SECRET` to at least 32 bytes and `AUTH_DOMAIN`; `AUTH_URI` can override the default `https://${AUTH_DOMAIN}`.
+- `getCaller(req)` returns only the address in a valid signed session cookie. `x-user-address` is ignored unless `AUTH_DEV_HEADER=true`; keep that disabled outside local tests. The demo API key remains application-level access control, not a per-user session token.
+- SARAL is fail-closed. `SARAL_ENABLED` defaults to `false`; the route and connector return `SARAL not configured: awaiting mentor docs` until mentor docs arrive. No SARAL SDK calls, package names or proof formats are assumed. If those docs provide an EIP-1193 provider, it can use the injected-wallet flow; a session-proof flow needs a separately documented verifier.
+- `GET /deals/:id/payment` reads settlement amounts indexed by B1 from `Settled` events; both payout amount fields are formatted using 6 MockUSD decimals.
+
+## PG wallet and transaction module (frontend handoff)
+- The browser modules currently live under `backend/src/auth/`. FE must not bundle code from the backend. B2 owns `shared/`; PG has requested that B2 publish/export `wallet-connector.ts` and `transaction-helper.ts` from `@kernel-exploits/shared`. FE should import them from that package after B2 completes the export. Discovery listens for EIP-6963 announcements, lists MetaMask and BridgeKey only when they announce a standard EIP-1193 provider, and falls back to `window.ethereum` when no supported announcement is available. The BridgeKey extension was not available for a live check in this checkout.
+- Call `connector.connect()` to request accounts and ensure chain `91562037` (`0x5752035`). If the chain is unknown, the connector adds MST Testnet using tMSTC, the documented MST RPC, and explorer. A code `4001` rejection becomes a user-readable error. Subscribe with `onAccountsChanged`; use `bindWalletSession(connector, { onLoginRequired })` to POST `/auth/logout` and prompt SIWE login again after an account change. Subscribe to `onChainChanged` to disable actions until the wallet returns to MST Testnet; `getWalletClient()` also enforces this check before each action.
+- After login call `getTestGasStatus(publicClient, address)`. When balance is below `0.05` tMSTC, display its `message` (“Getting you test gas…”) while B1 runs the PG gas-drip hook after KYC approval. Show its `faucetUrl` (`https://faucet.mstblockchain.com/`) as a fallback.
+- Use `sendPgContractAction({ connector, publicClient, contractAddress, abi, action, args })` for `proposeDeal`, `acceptDeal`, `markDelivered`, `release`, `raiseDispute`, `acceptResolution`, `escalate`, and `fund`. It waits for a successful receipt and returns `{ txHash, explorerUrl }`; reverted receipts throw an error. The explorer link is `https://testnet.mstscan.com/tx/<hash>`.
+- SARAL remains dropped from the hackathon flow. Keep `SARAL_ENABLED=false`; its connector remains a fail-closed placeholder pending official docs.
 
 ## Shapes
 ```ts
 type User = { address: string; handle?: string; kycLevel: 0 | 1 | 2 };
+
+type Payment = {
+  id: string; dealId: number; amount: string; status: "created"|"paid"|"minted"|"funded"|"failed";
+  method?: "upi_qr"|"upi_id"|"upi_app"|"crypto"|null;
+  mintTx: string|null; fundTx: string|null; createdAt: string; amountFormatted: string;
+};
+type Payout = {
+  dealId: number; toBuyer: string; toSeller: string; finalStatus: string; txHash: string;
+  toBuyerFormatted: string; toSellerFormatted: string;
+};
 
 // Authoritative: shared/src/sow.ts (zod, "sow/v1"). Mirrored here for reference.
 type SOW = {
