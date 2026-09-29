@@ -81,7 +81,7 @@ export default function SetupPinPage() {
         </Card>
         <p className="mt-4 flex items-start justify-center gap-2 px-2 text-center text-xs text-muted">
           <LockIcon className="mt-0.5 h-4 w-4 shrink-0" />
-          Never share your PIN. Sakshi staff will never ask for it.
+          Never share your PIN. Yescro staff will never ask for it.
         </p>
       </Screen>
     </>

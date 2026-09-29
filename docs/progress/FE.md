@@ -13,6 +13,7 @@
 - [ ] @B2: export PG's `wallet-connector.ts` + `transaction-helper.ts` from `@kernel-exploits/shared` (with a build); FE vendors a copy in `frontend/lib/pg-wallet.ts` until then
 - [ ] @PG @B1: device binding + PIN endpoints FE calls (mock only today): `POST /auth/device/bind`, `/auth/new-device`, `/auth/pin`, `/auth/pin/verify`, `/auth/device`, `GET /users/me`, `GET /users/by-phone/:phone` — confirm the owner or keep the PIN client-side
 - [ ] @B1: `/kyc/submit` gets `address`, `name`, `phone`, `pan`, `file`; please store `phone` so people can be found by mobile number
+- [ ] @PG: product is now **Yescro** (tagline "Life is uncertain, payments need not be."); consider renaming the demo UPI payee `tranquebar-demo@upi` in `backend/src/payments/onramp.ts` (e.g. `yescro-demo@upi`) so the QR matches the brand
 
 ## Interface changes
 <!-- Any change to endpoints, JSON shapes, ABI, shared/ files. Also update docs/API.md. -->
@@ -27,6 +28,12 @@
 - **Tested:** how it was verified (curl, test, explorer tx link)
 - **Next:** what comes next for this role
 -->
+
+### Rename to Yescro
+- **What:** product name Sakshi → **Yescro** everywhere it's shown (app header, page title, PWA manifest, login, QR scanner, account/help/FAQ/guide, error messages, mock UPI payee) and new tagline **"Life is uncertain, payments need not be."** on the login screen, page description and manifest. Transaction IDs now start with `YSC` instead of `SKS`. Root `README.md` and `docs/KICKSTART.md` updated with the name and tagline.
+- **Files:** `frontend/components/Header.tsx` (`APP_NAME`, new `TAGLINE`), `frontend/app/**`, `frontend/lib/{mocks,format}.ts`, `frontend/README.md`, `README.md`, `docs/KICKSTART.md`
+- **Tested:** `tsc --noEmit` and `eslint` pass; `git grep -i sakshi` finds nothing.
+- **Next:** —
 
 ### 2026-09-29 — Merged geeth-dev (B1 + B2 + PG) into chandana; live client aligned with docs/API.md (done by B2's agent at the repo owner's request)
 - **What:** merged `origin/geeth-dev` (the whole backend chain). Conflicts: the branch's root `STATUS.md` (team status moved to `docs/STATUS.md`) → FE's decisions added to `docs/STATUS.md`, FE's log entries moved here; `docs/progress/FE.md` → the team template with FE's entries. Also merged FE's own `bf5a42c` (wallet sign-in; it already added `X-API-Key`, `credentials: "include"`, `{ error: { code, message } }` parsing and the official explorer — FE's versions kept). On top, `lib/api.ts` (live path only; mocks unchanged): draft calls use B2's `/drafts/*` (create, terms, sow, merge-sow, conflicts, approve-sow) instead of `/deals/*`, and `createDraft(me, d, counterparty?)` sends `{ initiator, counterparty (the looked-up contact's wallet address), purpose, price, terms }`. `package-lock.json` was out of sync with `package.json` (`npm ci` failed) → regenerated.

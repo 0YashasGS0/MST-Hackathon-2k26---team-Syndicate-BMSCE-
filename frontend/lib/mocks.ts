@@ -42,7 +42,7 @@ const addressOf = (phone: string) => `0x${phone.padStart(40, "0")}` as Address;
 const key = (a: string) => a.toLowerCase();
 const NONCE_SECS = 5 * 60;
 const SESSION_SECS = 3600;
-const SIWE_DOMAIN = "sakshi.demo";
+const SIWE_DOMAIN = "yescro.demo";
 // Wallets that sign in as the arbitrator (server-side env, mock only).
 const ARBITRATORS = new Set((process.env.MOCK_ARBITRATORS ?? "").split(",").map((a) => key(a.trim())).filter(Boolean));
 const fail = (msg: string): never => {
@@ -65,8 +65,8 @@ type Db = {
 };
 
 // Kept on globalThis so dev-server hot reloads don't wipe it.
-const g = globalThis as unknown as { __sakshiDb?: Promise<Db> };
-const db = () => (g.__sakshiDb ??= seed());
+const g = globalThis as unknown as { __yescroDb?: Promise<Db> };
+const db = () => (g.__yescroDb ??= seed());
 
 const userByAddress = (d: Db, a: Address) => d.users.get(key(a));
 const userByPhone = (d: Db, phone: string) => [...d.users.values()].find((u) => u.phone && u.phone === phone);
@@ -291,7 +291,7 @@ async function seed(): Promise<Db> {
 }
 
 // ---------------------------------------------------------------- auth / accounts
-const pinHash = (address: Address, pin: string) => keccak256(toBytes(`sakshi-pin:${key(address)}:${pin}`));
+const pinHash = (address: Address, pin: string) => keccak256(toBytes(`yescro-pin:${key(address)}:${pin}`));
 
 /** Counts wrong attempts per key and locks for LOCK_SECS after MAX_ATTEMPTS, like UPI apps. */
 async function guard(k: string, ok: boolean, what: string) {
@@ -483,7 +483,7 @@ export async function createDraft(me: Address, n: NewDraft): Promise<Draft> {
   const d = await db();
   const self = d.users.get(key(me)) ?? fail("Account not found.");
   const other = userByPhone(d, n.counterpartyPhone.replace(/\D/g, "").slice(-10));
-  if (!other || other.role !== "user" || !other.name) fail("No verified Sakshi account with this mobile number.");
+  if (!other || other.role !== "user" || !other.name) fail("No verified Yescro account with this mobile number.");
   if (key(other!.address) === key(self.address)) fail("You can't create a payment with yourself.");
   const paying = n.role === "buyer";
   const [buyer, seller] = paying ? [self, other!] : [other!, self];
@@ -661,14 +661,14 @@ const receipts = new Map<string, OnrampConfirm>(); // dealId → confirmation, s
 export async function onrampSession(id: string): Promise<OnrampSession> {
   const deal = await getDeal(id);
   const inr = ((Number(deal.amount) / 1e6) * INR_PER_USD).toFixed(2);
-  const upi = { payee: "sakshi.escrow@upi", note: `Sakshi escrow deal ${id}` };
+  const upi = { payee: "yescro.escrow@upi", note: `Yescro escrow deal ${id}` };
   return {
     paymentId: `pay-${id}`,
     amountUsd: deal.amount, // MockUSD base units, like PG
     amountInr: inr,
     status: deal.status === "Accepted" ? "created" : "funded",
     upi,
-    upiUri: `upi://pay?pa=${encodeURIComponent(upi.payee)}&pn=${encodeURIComponent("Sakshi Escrow")}&am=${inr}&cu=INR&tn=${encodeURIComponent(upi.note)}`,
+    upiUri: `upi://pay?pa=${encodeURIComponent(upi.payee)}&pn=${encodeURIComponent("Yescro")}&am=${inr}&cu=INR&tn=${encodeURIComponent(upi.note)}`,
   };
 }
 

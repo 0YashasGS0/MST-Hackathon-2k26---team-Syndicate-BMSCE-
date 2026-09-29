@@ -59,7 +59,7 @@ export default function PersonPage() {
     return (
       <>
         <BackBar href="/home" title="Not found" />
-        <p className="p-6 text-center text-muted">No Sakshi account with this number.</p>
+        <p className="p-6 text-center text-muted">No Yescro account with this number.</p>
       </>
     );
 

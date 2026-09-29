@@ -1,6 +1,6 @@
 # frontend
 
-The Sakshi app: Next.js 16 (App Router) + Tailwind 4 + viem. A UPI-style payments app where hashes, addresses and the
+The Yescro app: Next.js 16 (App Router) + Tailwind 4 + viem. A UPI-style payments app where hashes, addresses and the
 chain stay out of the user's way.
 
 ## Run

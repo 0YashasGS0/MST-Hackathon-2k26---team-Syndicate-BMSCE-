@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { deviceAccount } from "@/lib/device-key";
 import { listWallets, signInWithWallet, type InjectedWalletOption } from "@/lib/wallet";
 import { useSession } from "@/components/session";
-import { Logo } from "@/components/Header";
+import { Logo, TAGLINE } from "@/components/Header";
 import { PinInput } from "@/components/Pin";
 import { AlertIcon, WalletIcon } from "@/components/icons";
 import { Button, cx } from "@/components/ui";
@@ -64,7 +64,7 @@ export default function LoginPage() {
         </span>
         <div className="mt-10 lg:mt-0">
           <h1 className="max-w-md text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-            Pay for work. Release only when it&apos;s done.
+            {TAGLINE}
           </h1>
           <p className="mt-3 max-w-md text-base opacity-90">
             Your money is held safely until you&apos;re happy with the work. If something goes wrong, raise a complaint

@@ -57,7 +57,7 @@ export default function AccountPage() {
 
         <SectionTitle>Help</SectionTitle>
         <Card flush className="divide-y divide-line/70">
-          <ListRow href="/account/guide" leading={<Tile><DocIcon className="h-5 w-5" /></Tile>} title="How to use Sakshi" subtitle="Step-by-step guide" />
+          <ListRow href="/account/guide" leading={<Tile><DocIcon className="h-5 w-5" /></Tile>} title="How to use Yescro" subtitle="Step-by-step guide" />
           <ListRow href="/account/faq" leading={<Tile><HelpIcon className="h-5 w-5" /></Tile>} title="FAQs" subtitle="Common questions answered" />
           <ListRow href="/account/help" leading={<Tile><AlertIcon className="h-5 w-5" /></Tile>} title="Help & support" subtitle="Report a problem or contact us" />
         </Card>

@@ -4,7 +4,8 @@ import { initials } from "@/lib/format";
 import { useUser } from "./session";
 import { cx } from "./ui";
 
-export const APP_NAME = "Sakshi"; // working name — TBD
+export const APP_NAME = "Yescro";
+export const TAGLINE = "Life is uncertain, payments need not be.";
 
 export function Logo({ onDark }: { onDark?: boolean }) {
   return (

@@ -115,7 +115,7 @@ function NewPayment() {
             )}
             {phone.length === 10 && contact !== undefined && (isSelf || !contact) && (
               <p className="border-t border-line/70 px-5 py-4 text-sm font-medium text-danger sm:px-6">
-                {isSelf ? "That's your own number." : "No verified Sakshi account with this number."}
+                {isSelf ? "That's your own number." : "No verified Yescro account with this number."}
               </p>
             )}
             {verified && contact && (

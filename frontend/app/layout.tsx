@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sakshi",
-  description: "Pay for work safely. Your money is held until the job is done.",
-  appleWebApp: { capable: true, title: "Sakshi", statusBarStyle: "default" },
+  title: "Yescro",
+  description: "Life is uncertain, payments need not be. Your money is held safely until the work is done.",
+  appleWebApp: { capable: true, title: "Yescro", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

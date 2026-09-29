@@ -1,5 +1,5 @@
 "use client";
-// Read someone's Sakshi QR — live from the camera, or from an image on this device (pick, drag & drop, or
+// Read someone's Yescro QR — live from the camera, or from an image on this device (pick, drag & drop, or
 // paste a screenshot) — and jump straight to Pay / Request with them selected.
 import jsQR from "jsqr";
 import { useRouter } from "next/navigation";
@@ -45,7 +45,7 @@ export default function ScanPage() {
         router.push(path);
         return true;
       }
-      setError(text.startsWith("upi:") ? "That's a UPI merchant QR. Scan a Sakshi QR to pay safely." : "That isn't a Sakshi QR code.");
+      setError(text.startsWith("upi:") ? "That's a UPI merchant QR. Scan a Yescro QR to pay safely." : "That isn't a Yescro QR code.");
       return false;
     }
 
@@ -106,7 +106,7 @@ export default function ScanPage() {
     if (!text) return setError("No QR code found in that image. Try a sharper or closer picture.");
     const path = toAppPath(text);
     if (path) router.push(path);
-    else setError("That isn't a Sakshi QR code.");
+    else setError("That isn't a Yescro QR code.");
   }
 
   return (
@@ -125,7 +125,7 @@ export default function ScanPage() {
         </div>
         <canvas ref={canvas} className="hidden" />
 
-        <p className="mt-4 text-center text-sm text-muted">Point the camera at a Sakshi QR code</p>
+        <p className="mt-4 text-center text-sm text-muted">Point the camera at a Yescro QR code</p>
         {error && <p className="mt-3 rounded-2xl bg-warning/10 px-4 py-3 text-center text-sm text-warning">{error}</p>}
 
         <label
