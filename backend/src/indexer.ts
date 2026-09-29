@@ -3,8 +3,8 @@
 // chain_events (idempotent via the (tx_hash, log_index) primary key), update
 // deals.status, and on startup backfill with getContractEvents from DEPLOY_BLOCK
 // so a restart never loses history.
-import { pub, escrowAbi, ESCROW } from "./chain";
-import { db } from "./db";
+import { pub, escrowAbi, ESCROW } from "./chain.js";
+import { db } from "./db.js";
 
 const insertEvent = db.prepare(`
   INSERT OR IGNORE INTO chain_events (tx_hash, log_index, deal_id, name, args_json, block)
@@ -91,7 +91,7 @@ export async function startIndexer() {
   pub.watchContractEvent({
     address: ESCROW,
     abi: escrowAbi,
-    onLogs: (logs) => logs.forEach(storeLog),
-    onError: (err) => console.error("[indexer] watch error:", err),
+    onLogs: (logs: any) => logs.forEach(storeLog),
+    onError: (err: any) => console.error("[indexer] watch error:", err),
   });
 }

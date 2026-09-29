@@ -1,7 +1,7 @@
 // Hour 5-8 — Dispute & arbitration plumbing, per TEAM_ROADMAP.md §1.
 import { Router, Request, Response, NextFunction } from "express";
 import { keccak256, stringToHex } from "viem";
-import { agent, arbitrator, org, escrowAbi, ESCROW, sendContractTx } from "../chain";
+import { agent, arbitrator, org, escrowAbi, ESCROW, sendContractTx } from "../chain.js";
 import { scoreDispute } from "../agent/scoreDispute.js";
 import { hashJson } from "../sow/hash.js";
 import { SowStore } from "../sow/store.js";

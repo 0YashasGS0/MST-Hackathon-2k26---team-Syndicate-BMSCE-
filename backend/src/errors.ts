@@ -3,7 +3,7 @@
 // "Map every contract revert ... to readable HTTP errors using viem's decodeErrorResult."
 import { decodeErrorResult, BaseError, ContractFunctionRevertedError } from "viem";
 import { Response } from "express";
-import { escrowAbi } from "./chain";
+import { escrowAbi } from "./chain.js";
 
 const STATUS_NAMES = [
   "None", "Proposed", "Accepted", "Funded", "Delivered", "Disputed",
