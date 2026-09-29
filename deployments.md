@@ -8,7 +8,9 @@
 | DealEscrow | — (not deployed yet) | — | — | — | ⬜ |
 
 > The previous values here were placeholders: they equalled the demo buyer/seller **wallet** addresses below, with an all-zero deploy tx.
-> Deploy with `contracts/deploy.js` (or `forge create`), then fill in the real contract addresses, tx hash and block.
+> Deploy with `cd contracts && npm ci && node deploy.js` (or `forge script script/Deploy.s.sol`); both deploy MockUSD,
+> DealEscrow(usd, agent, arbitrator) and approve the escrow from ORG. `deploy.js` checks the result on-chain and prints
+> the rows for this table and the env values.
 
 ## System wallets (addresses only)
 | Role | Address |
