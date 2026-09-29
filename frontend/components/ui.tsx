@@ -108,7 +108,7 @@ const avatarColors = [
 ];
 
 export function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg" }) {
-  const color = avatarColors[[...name].reduce((s, c) => s + c.charCodeAt(0), 0) % avatarColors.length];
+  const color = avatarColors[[...(name || "")].reduce((s, c) => s + c.charCodeAt(0), 0) % avatarColors.length];
   const dim = { sm: "h-9 w-9 text-xs", md: "h-11 w-11 text-sm", lg: "h-16 w-16 text-lg" }[size];
   return (
     <span className={cx("grid shrink-0 place-items-center rounded-full font-semibold tracking-tight", color, dim)}>

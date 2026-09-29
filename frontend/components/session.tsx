@@ -49,10 +49,15 @@ const local = store(() => localStorage);
 const tab = store(() => sessionStorage);
 
 // crypto.randomUUID only exists on https/localhost; phones opening the dev server over the LAN need a fallback.
-const newId = () =>
-  typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+const newId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    return [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+};
 
 const Ctx = createContext<(Session & { unlocked: boolean; unlock: () => void }) | null>(null);
 

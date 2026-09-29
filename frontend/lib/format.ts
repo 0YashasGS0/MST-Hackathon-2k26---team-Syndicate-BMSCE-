@@ -29,7 +29,7 @@ export const txUrl = (hash: string) => `${EXPLORER_URL}/tx/${hash}`;
 export const txnId = (dealId: string) => `YSC${dealId.padStart(9, "0")}`;
 
 export const initials = (name: string) =>
-  name
+  (name || "")
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)

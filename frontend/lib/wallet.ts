@@ -48,6 +48,15 @@ export async function signInWithWallet(option?: InjectedWalletOption): Promise<{
   return { user, kind: option ? "injected" : "demo" };
 }
 
+/** Signs in as one of the pre-seeded demo accounts (Arbitrator, Priya, Ravi) without a real wallet. */
+export async function signInWithDemoAccount(phone: string): Promise<{ user: ApiUser; kind: WalletKind }> {
+  const address = `0x${phone.padStart(40, "0")}` as Address;
+  const nonce = await api.authNonce(address);
+  // Send "0xdemo" to bypass the signature check in the mock backend
+  const { user } = await api.authVerify(nonce.messageToSign, "0xdemo");
+  return { user, kind: "demo" };
+}
+
 /**
  * Watches the signed-in wallet. An account switch clears the backend session (POST /auth/logout) and asks for a
  * fresh sign-in; a network switch away from MST reports `false` so on-chain actions can be disabled.

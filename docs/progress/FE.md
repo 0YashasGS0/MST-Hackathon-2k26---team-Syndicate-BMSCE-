@@ -29,6 +29,12 @@
 - **Next:** what comes next for this role
 -->
 
+### 2026-09-29 — Agreement reject/redo and Demo accounts
+- **What:** Replaced the "Prepare agreement" redo button flow with a proper Cancel/Reject flow and a Redo Terms flow for agreements. Either party can reject a draft agreement with a reason, putting it into a "cancelled" state visible to both. The other party can then choose to "Propose new terms & redo". Also added 3 explicit Demo Account buttons (Priya Sharma, Ravi Kumar, Arbitrator Desk) to the login screen that bypass signature verification, making it easy to test the 3 core personas.
+- **Files:** `frontend/app/pay/agreement/[draftId]/page.tsx`, `frontend/app/page.tsx`, `frontend/lib/mocks.ts`, `frontend/lib/api.ts`, `frontend/lib/types.ts`, `frontend/lib/wallet.ts`
+- **Tested:** Tested locally by logging in with demo accounts and executing the reject/redo flow.
+- **Next:** Push up to github for the team to merge.
+
 ### Frontend package renamed to yescro
 - **What:** `frontend/package.json` / lockfile package name `frontend` → `yescro`; `frontend/README.md` title. The folder is still `frontend/`, so scripts and paths are unchanged.
 - **Files:** `frontend/package.json`, `frontend/package-lock.json`, `frontend/README.md`

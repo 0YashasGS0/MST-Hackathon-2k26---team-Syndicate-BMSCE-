@@ -58,6 +58,29 @@ export type DealView = {
 export class ChainUnavailableError extends Error {}
 
 export async function readOnchainDeal(id: number): Promise<OnchainDeal | null> {
+  // DEMO OVERRIDE: fake deals for the presentation
+  if (id >= 100000) {
+    const row = db.prepare("SELECT * FROM deals WHERE id = ?").get(id) as any;
+    if (row) {
+      return {
+        buyer: row.buyer,
+        seller: row.seller,
+        amount: BigInt(row.amount),
+        sowHash: "0x" + "0".repeat(64),
+        deliveryHash: "0x" + "0".repeat(64),
+        evidenceHash: "0x" + "0".repeat(64),
+        reasoningHash: "0x" + "0".repeat(64),
+        deliverBy: BigInt(Math.floor(Date.now()/1000) + 86400),
+        reviewPeriod: BigInt(86400),
+        deliveredAt: row.status === 'Delivered' ? BigInt(Math.floor(Date.now()/1000) - 3600) : 0n,
+        proposedBuyerBps: 0,
+        buyerAccepted: false,
+        sellerAccepted: false,
+        status: row.status === 'Delivered' ? 4 : (row.status === 'Accepted' ? 2 : 1)
+      };
+    }
+  }
+
   if (!ESCROW) throw new ChainUnavailableError("chain not configured yet");
   let d: OnchainDeal;
   try {

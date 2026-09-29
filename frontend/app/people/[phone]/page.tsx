@@ -63,7 +63,7 @@ export default function PersonPage() {
       </>
     );
 
-  const first = contact.name.split(" ")[0];
+  const first = (contact.name || "").split(" ")[0];
 
   return (
     <div className="flex min-h-dvh flex-col">

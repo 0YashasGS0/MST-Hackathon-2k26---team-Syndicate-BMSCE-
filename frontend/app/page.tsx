@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import type { Address } from "viem";
 import { api } from "@/lib/api";
 import { deviceAccount } from "@/lib/device-key";
-import { listWallets, signInWithWallet, type InjectedWalletOption } from "@/lib/wallet";
+import { listWallets, signInWithWallet, signInWithDemoAccount, type InjectedWalletOption } from "@/lib/wallet";
 import { useSession } from "@/components/session";
 import { Logo, TAGLINE } from "@/components/Header";
 import { PinInput } from "@/components/Pin";
@@ -33,6 +33,21 @@ export default function LoginPage() {
     setError(undefined);
     try {
       const { user } = await signInWithWallet(option);
+      const r = await api.bindDevice(user, deviceId, deviceAccount().address);
+      if (r.status === "ok") return signIn(r.user);
+      setAddress(user.address);
+      setStep("device");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+    setBusy(undefined);
+  }
+
+  async function connectDemo(phone: string, name: string) {
+    setBusy(`demo-${phone}`);
+    setError(undefined);
+    try {
+      const { user } = await signInWithDemoAccount(phone);
       const r = await api.bindDevice(user, deviceId, deviceAccount().address);
       if (r.status === "ok") return signIn(r.user);
       setAddress(user.address);
@@ -109,18 +124,33 @@ export default function LoginPage() {
                       {busy === w.id ? "Check your wallet…" : `Continue with ${w.name}`}
                     </Button>
                   ))}
-                  <Button
-                    size="lg"
-                    variant={wallets.length ? "secondary" : "primary"}
-                    className="w-full"
-                    disabled={!!busy}
-                    onClick={() => connect()}
-                  >
-                    <WalletIcon className="mr-2 h-5 w-5" />
-                    {busy === "demo" ? "Signing in…" : "Use demo wallet on this device"}
-                  </Button>
                   {!wallets.length && (
-                    <p className="text-xs text-muted">No wallet found in this browser. Install MetaMask, or use the demo wallet.</p>
+                    <div className="space-y-3 pt-4 border-t border-line/40">
+                      <p className="text-sm font-semibold">Demo Accounts (No Wallet Needed)</p>
+                      <Button size="lg" variant="secondary" className="w-full" disabled={!!busy} onClick={() => connectDemo("9000000001", "Priya Sharma")}>
+                        {busy === "demo-9000000001" ? "Signing in…" : "Sign in as Priya Sharma (Buyer)"}
+                      </Button>
+                      <Button size="lg" variant="secondary" className="w-full" disabled={!!busy} onClick={() => connectDemo("9000000002", "Ravi Kumar")}>
+                        {busy === "demo-9000000002" ? "Signing in…" : "Sign in as Ravi Kumar (Seller)"}
+                      </Button>
+                      <Button size="lg" variant="secondary" className="w-full" disabled={!!busy} onClick={() => connectDemo("9000000009", "Arbitrator Desk")}>
+                        {busy === "demo-9000000009" ? "Signing in…" : "Sign in as Arbitrator"}
+                      </Button>
+                    </div>
+                  )}
+                  {wallets.length > 0 && (
+                    <div className="space-y-3 pt-4 border-t border-line/40">
+                      <p className="text-sm font-semibold">Demo Accounts</p>
+                      <Button size="lg" variant="secondary" className="w-full" disabled={!!busy} onClick={() => connectDemo("9000000001", "Priya Sharma")}>
+                        Sign in as Priya Sharma (Buyer)
+                      </Button>
+                      <Button size="lg" variant="secondary" className="w-full" disabled={!!busy} onClick={() => connectDemo("9000000002", "Ravi Kumar")}>
+                        Sign in as Ravi Kumar (Seller)
+                      </Button>
+                      <Button size="lg" variant="secondary" className="w-full" disabled={!!busy} onClick={() => connectDemo("9000000009", "Arbitrator Desk")}>
+                        Sign in as Arbitrator
+                      </Button>
+                    </div>
                   )}
                 </div>
               )}

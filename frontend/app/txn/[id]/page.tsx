@@ -138,6 +138,9 @@ export default function TxnPage() {
                     <LockIcon className="mt-0.5 h-4 w-4 shrink-0" />
                     Digitally signed by both parties. Any change to this agreement would invalidate the signatures.
                   </p>
+                  <Button variant="ghost" size="sm" className="mt-4 w-full border border-line" onClick={() => window.print()}>
+                    Download Contract (PDF)
+                  </Button>
                 </>
               ) : agreement === null ? (
                 <p className="text-sm text-muted">No agreement on file.</p>
@@ -156,14 +159,14 @@ export default function TxnPage() {
             )}
             {deal.status === "Accepted" && !iAmBuyer && (
               <p className="rounded-2xl bg-surface-2 px-4 py-3 text-center text-sm text-muted">
-                Waiting for {other.split(" ")[0]} to pay. You&apos;ll be able to deliver once the money is held.
+                Waiting for {(other || "").split(" ")[0]} to pay. You&apos;ll be able to deliver once the money is held.
               </p>
             )}
             {deal.status === "Funded" && !iAmBuyer && (
               <Card>
                 <p className="text-[15px] font-semibold">Finished the work?</p>
                 <p className="mt-1 text-sm text-muted">
-                  Mark it delivered. {other.split(" ")[0]} then has {Math.round(deal.reviewPeriod / 86400)} days to review
+                  Mark it delivered. {(other || "").split(" ")[0]} then has {Math.round(deal.reviewPeriod / 86400)} days to review
                   before the money is released to you.
                 </p>
                 <textarea
@@ -180,12 +183,12 @@ export default function TxnPage() {
             )}
             {deal.status === "Delivered" && !iAmBuyer && (
               <p className="rounded-2xl bg-accent-soft px-4 py-3 text-center text-sm text-accent">
-                Delivered. Waiting for {other.split(" ")[0]} to review and release the payment.
+                Delivered. Waiting for {(other || "").split(" ")[0]} to review and release the payment.
               </p>
             )}
             {deal.status === "Delivered" && iAmBuyer && deal.deliveryNote && (
               <Card>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted">Delivery note from {other.split(" ")[0]}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted">Delivery note from {(other || "").split(" ")[0]}</p>
                 <p className="mt-1 whitespace-pre-wrap text-sm">{deal.deliveryNote}</p>
               </Card>
             )}

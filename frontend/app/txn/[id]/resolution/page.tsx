@@ -41,7 +41,7 @@ export default function ResolutionPage() {
 
   const iAmBuyer = deal.buyer.toLowerCase() === user.address.toLowerCase();
   const other = iAmBuyer ? deal.sellerName : deal.buyerName;
-  const otherFirst = other.split(" ")[0];
+  const otherFirst = (other || "").split(" ")[0];
   const me = iAmBuyer ? "buyer" : "seller";
   const iAccepted = !!deal.accepted?.[me];
   const theyAccepted = !!deal.accepted?.[iAmBuyer ? "seller" : "buyer"];
