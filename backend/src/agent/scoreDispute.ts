@@ -13,6 +13,9 @@ import { AgentValidationError, LlmUnavailableError, callToolWithRetry, escapeDat
 
 export { AgentValidationError as DisputeScoringError, DemoFallbackError, LlmUnavailableError };
 
+/** Code default for AGENT_PROMPT_VERSION. */
+export const DEFAULT_PROMPT_VERSION = "v4";
+
 export type DisputeInput = {
   dealId: number;
   sow: Sow;
@@ -134,7 +137,7 @@ let defaultStore: SowStore | undefined;
 export async function scoreDispute(input: DisputeInput, deps: ScorerDeps = {}): Promise<Ruling> {
   const demoFallback = deps.demoFallback ?? process.env.AGENT_DEMO_FALLBACK === "true";
   const fallbackOnFailure = deps.fallbackOnFailure ?? process.env.AGENT_FALLBACK_ON_FAILURE === "true";
-  let promptVersion = deps.promptVersion ?? (process.env.AGENT_PROMPT_VERSION || "v4");
+  let promptVersion = deps.promptVersion ?? (process.env.AGENT_PROMPT_VERSION || DEFAULT_PROMPT_VERSION);
   const system = DISPUTE_PROMPTS[promptVersion];
   if (!system) throw new Error(`unknown AGENT_PROMPT_VERSION "${promptVersion}" (available: ${Object.keys(DISPUTE_PROMPTS).join(", ")})`);
   const store = deps.store ?? (defaultStore ??= new SowStore());

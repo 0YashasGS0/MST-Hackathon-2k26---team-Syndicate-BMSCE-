@@ -1,22 +1,30 @@
 // Runs every demo scenario EVAL_RUNS times (default 3) through the real scoreDispute with the configured
 // provider/model/fallbacks and AGENT_PROMPT_VERSION. EVAL_DELAY_MS (default 7000) between calls, longer after a
 // 429 that carries a retryDelay (up to 65 s). Never prints the key or prompts.
-// Usage: npm run eval:disputes      (compare prompts: AGENT_PROMPT_VERSION=v3 npm run eval:disputes; default v4)
+// Usage: npm run eval:disputes      (other prompt: AGENT_PROMPT_VERSION=v3 npm run eval:disputes; code default v4)
 // Filters: EVAL_SCENARIOS=A,D (default: all), EVAL_RUNS=3. The chain comes from LLM_CHAIN (or the legacy LLM_* vars).
 // Cross-model: EVAL_COMPARE="groq:openai/gpt-oss-120b;gemini:gemini-2.5-flash" runs the scenarios once per entry, in
 // sequence (each entry is an LLM_CHAIN spec), then prints a side-by-side table.
 import "./_env";
 import { createLlmChain } from "../src/agent/createLlmClient";
+import { missingKeysFor, promptVersionBanner, resolveScriptChain } from "../src/agent/scriptEnv";
 import { DEFAULT_RELATIVE_CHECKS, formatCalls, formatCompareTable, formatDetails, formatRow, formatSummary, parseEvalCompare, runEval, type CompareResult } from "../src/agent/evalDisputes";
 import { labelOf, type LlmClient } from "../src/agent/llm";
 import { loadScenarios } from "../src/agent/scenarios";
 import { DISPUTE_PROMPTS } from "../src/agent/scoreDispute";
 
 const compare = parseEvalCompare(process.env.EVAL_COMPARE || "");
-const llm = compare.length ? undefined : createLlmChain();
-if (!compare.length && !llm) {
-  console.error("No usable LLM (set LLM_CHAIN with provider keys, or LLM_API_KEY) — nothing to evaluate.");
-  process.exit(1);
+const banner = promptVersionBanner(process.env);
+console.log(banner.line);
+if (banner.warning) console.warn(banner.warning);
+let llm: LlmClient[] | undefined;
+if (!compare.length) {
+  const resolved = resolveScriptChain(process.env);
+  if ("error" in resolved) {
+    console.error(resolved.error);
+    process.exit(1);
+  }
+  llm = resolved.chain;
 }
 const runs = Number(process.env.EVAL_RUNS || "3");
 if (!Number.isInteger(runs) || runs < 1) {
@@ -28,7 +36,7 @@ if (!Number.isInteger(delayMs) || delayMs < 0) {
   console.error(`EVAL_DELAY_MS must be a non-negative integer, got "${process.env.EVAL_DELAY_MS}"`);
   process.exit(1);
 }
-const promptVersion = process.env.AGENT_PROMPT_VERSION || "v3";
+const promptVersion = banner.version;
 if (!DISPUTE_PROMPTS[promptVersion]) {
   console.error(`unknown AGENT_PROMPT_VERSION "${promptVersion}" (available: ${Object.keys(DISPUTE_PROMPTS).join(", ")})`);
   process.exit(1);
@@ -80,7 +88,7 @@ if (compare.length) {
   for (const spec of compare) {
     const chain = createLlmChain({ ...process.env, LLM_CHAIN: spec });
     if (!chain) {
-      console.log(`\n=== ${spec}: skipped (no key for any entry)`);
+      console.log(`\n=== ${spec}: skipped — no key for any entry (${missingKeysFor(spec, process.env)})`);
       results.push({ chain: spec, summary: [], rows: [], skipped: "no key" });
       continue;
     }

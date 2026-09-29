@@ -2,15 +2,19 @@
 // Usage: npm run smoke:merge   (LLM_PROVIDER, LLM_API_KEY, LLM_MODEL from backend/.env or repo-root .env)
 import "./_env";
 import { hashSow } from "@kernel-exploits/shared";
-import { createLlmChain } from "../src/agent/createLlmClient";
+import { promptVersionBanner, resolveScriptChain } from "../src/agent/scriptEnv";
 import { mergeSow, SowMergeError } from "../src/agent/mergeSow";
 import { SAMPLE_PARTIES, attemptRecorder, sampleToken } from "./_env";
 
-const llm = createLlmChain();
-if (!llm) {
-  console.error("LLM_API_KEY is not set in .env — nothing to test.");
+const banner = promptVersionBanner(process.env);
+console.log(`${banner.line} — dispute scoring; the SOW merge prompt is sow-merge/v1`);
+if (banner.warning) console.warn(banner.warning);
+const resolved = resolveScriptChain(process.env);
+if ("error" in resolved) {
+  console.error(resolved.error);
   process.exit(1);
 }
+const llm = resolved.chain;
 const token = sampleToken();
 const now = Math.floor(Date.now() / 1000);
 const input = {

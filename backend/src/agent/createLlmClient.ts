@@ -16,7 +16,8 @@ export function createLlmClient(env: NodeJS.ProcessEnv = process.env): LlmClient
   if (provider !== "gemini" && provider !== "anthropic") {
     throw new Error(`LLM_PROVIDER must be "gemini" or "anthropic", got "${env.LLM_PROVIDER}"`);
   }
-  const key = env.LLM_API_KEY;
+  // LLM_API_KEY, or the provider's own key var (GEMINI_API_KEY / ANTHROPIC_API_KEY).
+  const key = env.LLM_API_KEY || (provider === "gemini" ? env.GEMINI_API_KEY : env.ANTHROPIC_API_KEY);
   if (!key) return undefined;
   if (provider === "anthropic") return new AnthropicLlmClient(env.LLM_MODEL || "claude-sonnet-5", key);
   if (!env.LLM_MODEL) {
