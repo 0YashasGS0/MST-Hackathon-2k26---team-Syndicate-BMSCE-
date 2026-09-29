@@ -1,6 +1,6 @@
 // Dispute split formula — the ONLY place the split is computed (backend, browser verify page, WASM port).
 // buyerBps = Σ floor(weightBps × (100 − fulfilledPct) / 100). Integer math only.
-import { TOTAL_BPS } from "./sow";
+import { TOTAL_BPS } from "./sow.js";
 
 export type WeightedDeliverable = { id: string; weightBps: number };
 export type DeliverableScore = { id: string; fulfilledPct: number };

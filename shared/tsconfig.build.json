@@ -1,0 +1,14 @@
+{
+  // Emits dist/*.js (ESM) + dist/*.d.ts for consumers (backend, frontend). `types: []` keeps Node globals out of
+  // the published build, so anything reachable from index stays browser-safe.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": [],
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src"]
+}

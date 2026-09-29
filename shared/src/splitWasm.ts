@@ -1,7 +1,7 @@
 // Loads shared/dist/split.wasm (built from wasm/split.ts) and wraps it with the same validation as split.ts.
 // Works in Node and the browser: takes the bytes, uses WebAssembly.instantiate, no fs here.
 // Browser: loadSplitWasm(await (await fetch("/split.wasm")).arrayBuffer()). Node: loadSplitWasm(readFileSync(path)).
-import { orderSplitInputs, orderVerdicts, validateVerdict, type CriterionVerdict, type DeliverableScore, type WeightedDeliverable } from "./split";
+import { orderSplitInputs, orderVerdicts, validateVerdict, type CriterionVerdict, type DeliverableScore, type WeightedDeliverable } from "./split.js";
 
 export type SplitWasm = {
   computeBuyerBps(deliverables: readonly WeightedDeliverable[], scores: readonly DeliverableScore[]): number;

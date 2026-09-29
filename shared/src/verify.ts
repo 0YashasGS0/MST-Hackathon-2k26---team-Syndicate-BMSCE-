@@ -1,9 +1,9 @@
 // Pure ruling verifier — the same code runs in the backend (/deals/:id/verify) and in the browser verify page.
 // Recomputes reasoningHash and the split from the stored reasoning object + SOW, and compares with the chain.
-import { hashJson, hashSow } from "./hash";
-import type { Sow } from "./sow";
-import { computeBuyerBps, fulfilledFromCriteria, validateBasis, type Basis, type Verdict } from "./split";
-import type { SplitWasm } from "./splitWasm";
+import { hashJson, hashSow } from "./hash.js";
+import type { Sow } from "./sow.js";
+import { computeBuyerBps, fulfilledFromCriteria, validateBasis, type Basis, type Verdict } from "./split.js";
+import type { SplitWasm } from "./splitWasm.js";
 
 /** One criterion verdict as stored in a v3 ruling (the LLM's output, plus nothing computed). */
 export type CriterionResult = {
