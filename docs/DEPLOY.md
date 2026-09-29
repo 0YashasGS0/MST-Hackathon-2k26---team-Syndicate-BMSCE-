@@ -1,7 +1,7 @@
 # Deploying
 
 One VM (or any Docker host) runs three containers: **Caddy** (HTTPS), the **frontend** (Next.js) and the
-**backend** (Express + SQLite on a volume). The contracts must be deployed to MST testnet first (B1, `scripts/`) and
+**backend** (Express + SQLite on a volume). The contracts must be deployed to MST testnet first (B1: `cd contracts && npm ci && node deploy.js`) and
 their addresses recorded in `deployments.md`; the backend and the frontend's on-chain actions need them.
 
 ```
