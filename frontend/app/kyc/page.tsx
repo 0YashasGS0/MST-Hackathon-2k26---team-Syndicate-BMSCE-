@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { useSession, useUser } from "@/components/session";
 import { Logo } from "@/components/Header";
-import { CameraIcon, CheckIcon, DocIcon, LockIcon, UserIcon } from "@/components/icons";
+import { CameraIcon, CheckIcon, DocIcon, LockIcon, PhoneIcon, UserIcon } from "@/components/icons";
 import { bareInputCls, Button, Card, cx, IconField, Screen } from "@/components/ui";
 
 export default function KycPage() {
@@ -20,8 +20,7 @@ export default function KycPage() {
     setError(undefined);
     try {
       const form = new FormData(e.currentTarget);
-      form.set("phone", user.phone);
-      updateUser(await api.submitKyc(user.phone, form)); // AuthGate then moves on to /home
+      updateUser(await api.submitKyc(user.address, form)); // AuthGate then moves on to /home
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
@@ -51,6 +50,19 @@ export default function KycPage() {
           <Card flush className="divide-y divide-line/70">
             <IconField icon={<UserIcon className="h-5 w-5" />} label="Full name (as on your ID)">
               <input name="name" required autoComplete="name" className={bareInputCls} placeholder="Priya Sharma" />
+            </IconField>
+            <IconField icon={<PhoneIcon className="h-5 w-5" />} label="Mobile number (people find you by it)">
+              <input
+                name="phone"
+                required
+                inputMode="numeric"
+                autoComplete="tel-national"
+                maxLength={10}
+                pattern="[6-9][0-9]{9}"
+                title="10-digit Indian mobile number"
+                className={bareInputCls + " tracking-wider"}
+                placeholder="98765 43210"
+              />
             </IconField>
             <IconField icon={<DocIcon className="h-5 w-5" />} label="PAN number">
               <input

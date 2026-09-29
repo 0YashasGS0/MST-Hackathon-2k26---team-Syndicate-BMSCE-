@@ -25,14 +25,16 @@ export type Sow = {
 };
 
 // ---- Users ----
-// Login is phone + OTP (SARAL MPC wallet under the hood). The account is bound to one device: the device
-// generates a signing key at login and registers its public address (`deviceKey`). Moving to a new device
-// also needs the security PIN, removes the old device, and starts a 24 h cooling period (lower limit).
+// Login is PG's wallet sign-in (docs/API.md): GET /auth/nonce → the wallet signs `messageToSign` →
+// POST /auth/verify sets an HttpOnly session cookie. The signed-in wallet address is the account.
+// The account is also bound to one device: the device generates a signing key at login and registers its
+// public address (`deviceKey`). Moving to a new device also needs the security PIN, removes the old device,
+// and starts a 24 h cooling period (lower limit).
 export type KycLevel = 0 | 1 | 2; // 1 = documents submitted, 2 = approved on-chain (setKyc)
 export type Role = "user" | "arbitrator";
 export type User = {
-  address: Address; // account wallet; never shown to the user
-  phone: string;
+  address: Address; // the signed-in wallet
+  phone: string; // mobile number given at KYC ("" before), used to find people and on QR codes
   name?: string;
   role: Role;
   deviceId: string;
@@ -41,8 +43,19 @@ export type User = {
   hasPin: boolean; // security PIN set (asked on app open, new device, signing, releasing money)
   deviceBoundAt?: number; // unix seconds this device was registered
   coolingUntil?: number; // new-device cooling period end; payments capped until then
-  wallet?: Address; // linked external crypto wallet, if any
 };
+/** GET /auth/nonce (PG). Single-use, expires in 5 minutes. */
+export type AuthNonce = {
+  nonce: string;
+  chainId: number;
+  domain: string;
+  issuedAt: string;
+  expirationTime: string;
+  messageToSign: string;
+};
+/** User record returned by PG's POST /auth/verify. */
+export type ApiUser = { address: Address; handle?: string; kycLevel: KycLevel };
+export type AuthResult = { user: ApiUser; expiresIn: number };
 export type LoginResult =
   | { status: "ok"; user: User }
   | { status: "pin_required" }; // account is registered on another device
@@ -142,7 +155,18 @@ export type Deal = {
 
 // ---- Payments (PG) ----
 export type PayMethod = "upi_qr" | "upi_id" | "upi_app" | "crypto";
-export type OnrampSession = { paymentId: string; amountInr: string; amountUsd: string; upiUri: string };
+/** POST /onramp/:dealId/session (PG). `amountUsd` is MockUSD base units; `upiUri` is the mock UPI QR / deep link. */
+export type OnrampSession = {
+  paymentId: string;
+  amountInr: string;
+  amountUsd: string;
+  status: PaymentStatus;
+  upi: { payee: string; note: string };
+  upiUri: string;
+};
+export type PaymentStatus = "created" | "paid" | "minted" | "funded" | "failed";
+/** POST /onramp/:dealId/confirm (PG), idempotent. Tx hashes are null until submitted. */
+export type OnrampConfirm = { status: PaymentStatus; mintTx: Hex | null; fundTx: Hex | null };
 
 // ---- Complaints / disputes (B1 + B2) ----
 export type Attachment = { name: string; type: string; size: number; url?: string };

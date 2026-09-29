@@ -1,75 +1,57 @@
 "use client";
-// Landing page = login. Phone + OTP once per device. If the account is registered on another device, the
-// security PIN is also required, the old device is removed and a 24 h cooling period starts (like UPI apps).
+// Landing page = login with a wallet (PG's sign-in: nonce → wallet signature → session cookie). If the account is
+// registered on another device, the security PIN is also required, the old device is removed and a 24 h cooling
+// period starts (like UPI apps). Browsers without MetaMask/BridgeKey can use a demo wallet kept on this device.
 import { useEffect, useState } from "react";
+import type { Address } from "viem";
 import { api } from "@/lib/api";
 import { deviceAccount } from "@/lib/device-key";
+import { listWallets, signInWithWallet, type InjectedWalletOption } from "@/lib/wallet";
 import { useSession } from "@/components/session";
 import { Logo } from "@/components/Header";
 import { PinInput } from "@/components/Pin";
-import { AlertIcon } from "@/components/icons";
-import { Button, cx, inputCls } from "@/components/ui";
+import { AlertIcon, WalletIcon } from "@/components/icons";
+import { Button, cx } from "@/components/ui";
 
-type Step = "phone" | "otp" | "device";
+type Step = "connect" | "device";
 
 export default function LoginPage() {
   const { deviceId, signIn, notice } = useSession();
-  const [step, setStep] = useState<Step>("phone");
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
+  const [step, setStep] = useState<Step>("connect");
+  const [wallets, setWallets] = useState<InjectedWalletOption[]>();
+  const [address, setAddress] = useState<Address>();
   const [pin, setPin] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string>(); // id of the wallet being used
   const [error, setError] = useState<string>();
-  const [resendIn, setResendIn] = useState(0);
 
   useEffect(() => {
-    if (resendIn <= 0) return;
-    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [resendIn]);
+    listWallets().then(setWallets, () => setWallets([]));
+  }, []);
 
-  const validPhone = /^[6-9]\d{9}$/.test(phone);
-
-  async function sendOtp(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
+  async function connect(option?: InjectedWalletOption) {
+    setBusy(option?.id ?? "demo");
     setError(undefined);
     try {
-      await api.requestOtp(phone);
-      setStep("otp");
-      setResendIn(30);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function verify(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(undefined);
-    try {
-      const r = await api.verifyOtp(phone, otp, deviceId, deviceAccount().address);
+      const { user } = await signInWithWallet(option);
+      const r = await api.bindDevice(user, deviceId, deviceAccount().address);
       if (r.status === "ok") return signIn(r.user);
+      setAddress(user.address);
       setStep("device");
-      setBusy(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      setOtp("");
-      setBusy(false);
     }
+    setBusy(undefined);
   }
 
   async function confirmDevice(p: string) {
-    setBusy(true);
+    setBusy("pin");
     setError(undefined);
     try {
-      signIn(await api.verifyNewDevice(phone, deviceId, p));
+      signIn(await api.verifyNewDevice(address!, deviceId, p));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setPin("");
-      setBusy(false);
+      setBusy(undefined);
     }
   }
 
@@ -100,33 +82,54 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           {notice && <p className="mb-6 rounded-xl bg-warning/10 px-4 py-3 text-sm text-warning">{notice}</p>}
 
-          {step === "phone" ? (
-            <form onSubmit={sendOtp} className="space-y-5">
+          {step === "connect" ? (
+            <div className="space-y-5">
               <div>
-                <h2 className="text-2xl font-semibold">Enter your mobile number</h2>
-                <p className="mt-1 text-sm text-muted">We&apos;ll send an OTP to verify it.</p>
+                <h2 className="text-2xl font-semibold">Sign in with your wallet</h2>
+                <p className="mt-1 text-sm text-muted">
+                  Your wallet signs a one-time message to prove it&apos;s you. It doesn&apos;t cost anything or move money.
+                </p>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="rounded-xl border border-line bg-surface-2 px-3.5 py-3 text-base sm:text-sm">+91</span>
-                <input
-                  autoFocus
-                  inputMode="numeric"
-                  autoComplete="tel-national"
-                  maxLength={10}
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
-                  className={inputCls + " tracking-wider"}
-                  placeholder="98765 43210"
-                />
-              </div>
-              <Button size="lg" className="w-full" disabled={!validPhone || busy}>
-                {busy ? "Sending OTP…" : "Get OTP"}
-              </Button>
+              {wallets === undefined ? (
+                <p className="text-sm text-muted">Looking for wallets…</p>
+              ) : (
+                <div className="space-y-3">
+                  {wallets.map((w) => (
+                    <Button
+                      key={w.id}
+                      size="lg"
+                      className="w-full"
+                      disabled={!!busy}
+                      onClick={() => connect(w)}
+                    >
+                      {w.info?.icon && (
+                        // eslint-disable-next-line @next/next/no-img-element -- wallet-provided data URL
+                        <img src={w.info.icon} alt="" className="mr-2 h-5 w-5" />
+                      )}
+                      {busy === w.id ? "Check your wallet…" : `Continue with ${w.name}`}
+                    </Button>
+                  ))}
+                  <Button
+                    size="lg"
+                    variant={wallets.length ? "secondary" : "primary"}
+                    className="w-full"
+                    disabled={!!busy}
+                    onClick={() => connect()}
+                  >
+                    <WalletIcon className="mr-2 h-5 w-5" />
+                    {busy === "demo" ? "Signing in…" : "Use demo wallet on this device"}
+                  </Button>
+                  {!wallets.length && (
+                    <p className="text-xs text-muted">No wallet found in this browser. Install MetaMask, or use the demo wallet.</p>
+                  )}
+                </div>
+              )}
               <p className="text-xs text-muted">
-                Your account will be registered to this device. Moving it to another device needs your OTP and security PIN.
+                We&apos;ll switch your wallet to MST Testnet. Your account will be registered to this device; moving it to
+                another device needs your security PIN.
               </p>
-            </form>
-          ) : step === "device" ? (
+            </div>
+          ) : (
             <div className="space-y-5">
               <div>
                 <span className="grid h-12 w-12 place-items-center rounded-2xl bg-warning/10 text-warning">
@@ -147,47 +150,11 @@ export default function LoginPage() {
               <button
                 type="button"
                 className="w-full text-center text-sm font-medium text-muted hover:text-foreground"
-                onClick={() => (setStep("phone"), setOtp(""), setPin(""), setError(undefined))}
+                onClick={() => (api.logout().catch(() => {}), setStep("connect"), setPin(""), setError(undefined))}
               >
                 Cancel
               </button>
             </div>
-          ) : (
-            <form onSubmit={verify} className="space-y-5">
-              <div>
-                <h2 className="text-2xl font-semibold">Enter OTP</h2>
-                <p className="mt-1 text-sm text-muted">
-                  Sent to +91 {phone}.{" "}
-                  <button type="button" className="font-medium text-accent" onClick={() => (setStep("phone"), setOtp(""))}>
-                    Change
-                  </button>
-                </p>
-              </div>
-              <input
-                autoFocus
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                className={inputCls + " text-center text-2xl tracking-[0.6em] sm:text-2xl"}
-                placeholder="••••••"
-              />
-              <Button size="lg" className="w-full" disabled={otp.length !== 6 || busy}>
-                {busy ? "Verifying…" : "Verify & continue"}
-              </Button>
-              <p className="text-center text-sm text-muted">
-                {resendIn > 0 ? (
-                  `Resend OTP in 0:${String(resendIn).padStart(2, "0")}`
-                ) : (
-                  <button type="button" className="font-medium text-accent" onClick={sendOtp}>
-                    Resend OTP
-                  </button>
-                )}
-              </p>
-              {/* Demo only until PG wires SARAL OTP. */}
-              <p className="text-center text-xs text-muted">Demo OTP: 123456</p>
-            </form>
           )}
 
           {error && <p className="mt-4 text-sm text-danger">{error}</p>}

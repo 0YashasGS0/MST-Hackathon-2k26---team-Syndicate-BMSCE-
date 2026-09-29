@@ -7,7 +7,7 @@ const payerSteps: [string, ReactNode][] = [
   ["Say what you need", "Enter the amount, what it's for, and what should be delivered — deadline, must-haves, quality."],
   ["Agree on the work", <>The other person adds their side. Tap <b>Prepare agreement</b> to turn both sides into one clear list. If you disagree on something like the delivery date, you both enter a date until they match.</>],
   ["Sign", <>Tap <b>Agree &amp; sign</b> and enter your PIN. Your phone signs the exact agreement, so nobody can change it later without it showing.</>],
-  ["Pay", "Pay with any UPI app (scan the QR, enter your UPI ID, or open your UPI app on a phone) or a linked crypto wallet. The money is held safely — not sent to the other person yet."],
+  ["Pay", "Pay with any UPI app (scan the QR, enter your UPI ID, or open your UPI app on a phone) or the crypto wallet you signed in with. The money is held safely — not sent to the other person yet."],
   ["Release when it's done", <>When the work is delivered, check it and tap <b>Release payment</b>. If you don&apos;t respond within the review window, the other person can claim it.</>],
 ];
 

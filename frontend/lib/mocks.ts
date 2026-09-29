@@ -1,12 +1,15 @@
 // Fake backend. Runs on the Next dev server (app/api/mock/route.ts), so every browser and phone that
 // opens the app shares the same accounts, deals and complaints. State lives in memory: restarting the
 // dev server resets it to the seed data below. Server-only — the browser reaches it through lib/api.ts.
-import { keccak256, toBytes, type Address, type Hex } from "viem";
+import { getAddress, keccak256, toBytes, verifyMessage, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { sowHash, verifySignature } from "./agreement";
 import { INR_PER_USD } from "./format";
 import type {
+  ApiUser,
   Attachment,
+  AuthNonce,
+  AuthResult,
   ChainEvent,
   Complaint,
   Conflict,
@@ -15,6 +18,7 @@ import type {
   Draft,
   LoginResult,
   NewDraft,
+  OnrampConfirm,
   OnrampSession,
   Party,
   PayMethod,
@@ -24,7 +28,6 @@ import type {
   User,
 } from "./types";
 
-export const DEMO_OTP = "123456";
 export const DEMO_PIN = "1234"; // security PIN of every seeded account
 const COOLING_SECS = 24 * 3600; // new-device cooling period, as UPI apps do
 const COOLING_LIMIT_INR = 5000;
@@ -36,21 +39,28 @@ const DAY = 86400;
 const now = () => Math.floor(Date.now() / 1000);
 const inrToBase = (inr: number) => String(Math.round((inr / INR_PER_USD) * 1e6));
 const addressOf = (phone: string) => `0x${phone.padStart(40, "0")}` as Address;
+const key = (a: string) => a.toLowerCase();
+const NONCE_SECS = 5 * 60;
+const SESSION_SECS = 3600;
+const SIWE_DOMAIN = "sakshi.demo";
+// Wallets that sign in as the arbitrator (server-side env, mock only).
+const ARBITRATORS = new Set((process.env.MOCK_ARBITRATORS ?? "").split(",").map((a) => key(a.trim())).filter(Boolean));
 const fail = (msg: string): never => {
   throw new Error(msg);
 };
 
 // ---------------------------------------------------------------- state
 type Db = {
-  users: Map<string, User>; // by phone
-  devices: Map<string, string>; // phone → bound deviceId
+  users: Map<string, User>; // by lowercase wallet address
+  devices: Map<string, string>; // address → bound deviceId
   drafts: Map<string, Draft>;
   sows: Map<string, SowVersion>; // by draftId
   deals: Deal[];
   complaints: Map<string, Complaint>;
-  pins: Map<string, Hex>; // phone → hash(phone:pin); never stored in plain text
-  attempts: Map<string, { count: number; lockedUntil: number }>; // "otp:<phone>" / "pin:<phone>"
-  pendingLogin: Map<string, { deviceId: string; deviceKey: Address; at: number }>; // OTP passed, PIN pending
+  pins: Map<string, Hex>; // address → hash(address:pin); never stored in plain text
+  attempts: Map<string, { count: number; lockedUntil: number }>; // "pin:<address>"
+  pendingLogin: Map<string, { deviceId: string; deviceKey: Address; at: number }>; // wallet signed, PIN pending
+  nonces: Map<string, { message: string; expiresAt: number }>; // address → issued sign-in message (single use)
   evCounter: number;
 };
 
@@ -58,7 +68,8 @@ type Db = {
 const g = globalThis as unknown as { __sakshiDb?: Promise<Db> };
 const db = () => (g.__sakshiDb ??= seed());
 
-const userByAddress = (d: Db, a: Address) => [...d.users.values()].find((u) => u.address.toLowerCase() === a.toLowerCase());
+const userByAddress = (d: Db, a: Address) => d.users.get(key(a));
+const userByPhone = (d: Db, phone: string) => [...d.users.values()].find((u) => u.phone && u.phone === phone);
 
 function ev(d: Db, name: string, t: number, args: Record<string, string> = {}): ChainEvent {
   d.evCounter += 1;
@@ -127,6 +138,7 @@ async function seed(): Promise<Db> {
     pins: new Map(),
     attempts: new Map(),
     pendingLogin: new Map(),
+    nonces: new Map(),
     evCounter: 0,
   };
   const keys = new Map<string, Hex>();
@@ -146,7 +158,7 @@ async function seed(): Promise<Db> {
   for (const [phone, name, role = "user"] of people) {
     const pk = generatePrivateKey();
     keys.set(phone, pk);
-    d.users.set(phone, {
+    d.users.set(key(addressOf(phone)), {
       address: addressOf(phone),
       phone,
       name,
@@ -156,7 +168,7 @@ async function seed(): Promise<Db> {
       kycLevel: role === "arbitrator" ? 2 : 1,
       hasPin: true,
     });
-    d.pins.set(phone, pinHash(phone, DEMO_PIN));
+    d.pins.set(key(addressOf(phone)), pinHash(addressOf(phone), DEMO_PIN));
   }
 
   type S = {
@@ -211,8 +223,8 @@ async function seed(): Promise<Db> {
   for (const [i, s] of seeds.entries()) {
     const id = String(i + 1);
     const t0 = now() - s.daysAgo * DAY;
-    const buyer = d.users.get(s.buyer)!;
-    const seller = d.users.get(s.seller)!;
+    const buyer = userByPhone(d, s.buyer)!;
+    const seller = userByPhone(d, s.seller)!;
     const amount = inrToBase(s.inr);
     const sow = draftSow(s.title, amount, buyer.address, seller.address, t0 + 5 * DAY);
     const hash = sowHash(sow);
@@ -259,8 +271,8 @@ async function seed(): Promise<Db> {
   }
 
   // An agreement in progress where the two sides disagree on the deadline.
-  const priya = d.users.get("9000000001")!;
-  const ravi = d.users.get("9000000002")!;
+  const priya = userByPhone(d, "9000000001")!;
+  const ravi = userByPhone(d, "9000000002")!;
   d.drafts.set("draft-demo", {
     id: "draft-demo",
     initiator: "buyer",
@@ -279,118 +291,152 @@ async function seed(): Promise<Db> {
 }
 
 // ---------------------------------------------------------------- auth / accounts
-const pinHash = (phone: string, pin: string) => keccak256(toBytes(`sakshi-pin:${phone}:${pin}`));
+const pinHash = (address: Address, pin: string) => keccak256(toBytes(`sakshi-pin:${key(address)}:${pin}`));
 
 /** Counts wrong attempts per key and locks for LOCK_SECS after MAX_ATTEMPTS, like UPI apps. */
-async function guard(key: string, ok: boolean, what: string) {
+async function guard(k: string, ok: boolean, what: string) {
   const d = await db();
-  const a = d.attempts.get(key) ?? { count: 0, lockedUntil: 0 };
+  const a = d.attempts.get(k) ?? { count: 0, lockedUntil: 0 };
   if (a.lockedUntil > now()) fail(`Too many wrong ${what} attempts. Try again in ${Math.ceil((a.lockedUntil - now()) / 60)} min.`);
   if (ok) {
-    d.attempts.delete(key);
+    d.attempts.delete(k);
     return;
   }
   a.count += 1;
   if (a.count >= MAX_ATTEMPTS) {
-    d.attempts.set(key, { count: 0, lockedUntil: now() + LOCK_SECS });
+    d.attempts.set(k, { count: 0, lockedUntil: now() + LOCK_SECS });
     fail(`Too many wrong ${what} attempts. Locked for ${LOCK_SECS / 60} minutes.`);
   }
-  d.attempts.set(key, a);
+  d.attempts.set(k, a);
   const left = MAX_ATTEMPTS - a.count;
   fail(`Incorrect ${what}. ${left} attempt${left === 1 ? "" : "s"} left.`);
 }
 
-function bind(d: Db, phone: string, deviceId: string, deviceKey: Address, newDevice: boolean): User {
-  const base: User = d.users.get(phone) ?? {
-    address: addressOf(phone),
-    phone,
-    role: "user",
-    kycLevel: 0,
-    hasPin: false,
-    deviceId: "",
-  };
-  d.devices.set(phone, deviceId); // the previous device is de-registered and signs out on its next check
-  d.pendingLogin.delete(phone);
+const checkPin = async (d: Db, address: Address, pin: string) =>
+  guard(`pin:${key(address)}`, d.pins.get(key(address)) === pinHash(address, pin), "PIN");
+
+function bind(d: Db, address: Address, deviceId: string, deviceKey: Address, newDevice: boolean): User {
+  const base = d.users.get(key(address)) ?? fail("Account not found.");
+  d.devices.set(key(address), deviceId); // the previous device is de-registered and signs out on its next check
+  d.pendingLogin.delete(key(address));
   const u: User = { ...base, deviceId, deviceKey, deviceBoundAt: now(), coolingUntil: newDevice ? now() + COOLING_SECS : undefined };
-  d.users.set(phone, u);
+  d.users.set(key(address), u);
   return u;
 }
 
-export async function requestOtp(phone: string) {
-  if (!/^\d{10}$/.test(phone)) fail("Enter a valid 10-digit mobile number.");
+const apiUser = (u: User): ApiUser => ({ address: u.address, handle: u.name, kycLevel: u.kycLevel });
+
+/** PG's GET /auth/nonce: a single-use sign-in message for this wallet, valid for 5 minutes. */
+export async function authNonce(address: string): Promise<AuthNonce> {
   const d = await db();
-  const a = d.attempts.get(`otp:${phone}`);
-  if (a && a.lockedUntil > now()) fail(`Too many wrong OTP attempts. Try again in ${Math.ceil((a.lockedUntil - now()) / 60)} min.`);
-  return { sent: true as const };
+  let a: Address;
+  try {
+    a = getAddress(address);
+  } catch {
+    return fail("A valid wallet address is required.");
+  }
+  const nonce = keccak256(toBytes(`${a}:${Math.random()}:${Date.now()}`)).slice(2, 34);
+  const issuedAt = new Date().toISOString();
+  const expirationTime = new Date(Date.now() + NONCE_SECS * 1000).toISOString();
+  // Same message shape as PG's formatSignInMessage (EIP-4361 style).
+  const messageToSign = `${SIWE_DOMAIN} wants you to sign in with your Ethereum account:\n${a}\n\nSign in to MST DealEscrow.\n\nURI: https://${SIWE_DOMAIN}\nVersion: 1\nChain ID: 91562037\nNonce: ${nonce}\nIssued At: ${issuedAt}\nExpiration Time: ${expirationTime}`;
+  d.nonces.set(key(a), { message: messageToSign, expiresAt: now() + NONCE_SECS });
+  return { nonce, chainId: 91562037, domain: SIWE_DOMAIN, issuedAt, expirationTime, messageToSign };
 }
 
-/** Step 1. First device or the account's own device → signed in. Registered elsewhere → security PIN needed too. */
-export async function verifyOtp(phone: string, otp: string, deviceId: string, deviceKey: Address): Promise<LoginResult> {
+/** PG's POST /auth/verify: checks the signature over the issued message, consumes the nonce, finds or creates the user. */
+export async function authVerify(message: string, signature: Hex): Promise<AuthResult> {
   const d = await db();
-  await guard(`otp:${phone}`, otp === DEMO_OTP, "OTP");
-  const bound = d.devices.get(phone);
-  const u = d.users.get(phone);
-  if (u?.hasPin && bound && bound !== deviceId) {
-    d.pendingLogin.set(phone, { deviceId, deviceKey, at: now() });
+  const line = message.split("\n")[1] ?? "";
+  if (!/^0x[0-9a-fA-F]{40}$/.test(line)) fail("Sign-in message is invalid.");
+  const a = getAddress(line);
+  const issued = d.nonces.get(key(a));
+  if (!issued || issued.message !== message || issued.expiresAt <= now()) fail("Sign-in expired or already used. Try again.");
+  if (!(await verifyMessage({ address: a, message, signature }).catch(() => false))) fail("Wallet signature is invalid.");
+  d.nonces.delete(key(a));
+  let u = d.users.get(key(a));
+  if (!u) {
+    const arbitrator = ARBITRATORS.has(key(a));
+    u = {
+      address: a,
+      phone: "",
+      name: arbitrator ? "Arbitrator Desk" : undefined,
+      role: arbitrator ? "arbitrator" : "user",
+      deviceId: "",
+      kycLevel: arbitrator ? 2 : 0,
+      hasPin: false,
+    };
+    d.users.set(key(a), u);
+  }
+  return { user: apiUser(u), expiresIn: SESSION_SECS };
+}
+
+export async function logout() {
+  return undefined; // the real backend clears its session cookie; the mock keeps no session
+}
+
+/** After wallet sign-in. First device or the account's own device → signed in. Registered elsewhere → PIN too. */
+export async function bindDevice(user: ApiUser, deviceId: string, deviceKey: Address): Promise<LoginResult> {
+  const d = await db();
+  const u = d.users.get(key(user.address)) ?? fail("Sign in with your wallet first.");
+  const bound = d.devices.get(key(u.address));
+  if (u.hasPin && bound && bound !== deviceId) {
+    d.pendingLogin.set(key(u.address), { deviceId, deviceKey, at: now() });
     return { status: "pin_required" };
   }
-  return { status: "ok", user: bind(d, phone, deviceId, deviceKey, false) };
+  return { status: "ok", user: bind(d, u.address, deviceId, deviceKey, false) };
 }
 
 /** Step 2 on a new device: security PIN. Removes the old device and starts the cooling period. */
-export async function verifyNewDevice(phone: string, deviceId: string, pin: string): Promise<User> {
+export async function verifyNewDevice(address: Address, deviceId: string, pin: string): Promise<User> {
   const d = await db();
-  const pending = d.pendingLogin.get(phone);
-  if (!pending || pending.deviceId !== deviceId || now() - pending.at > 300) fail("Session expired. Verify your number again.");
-  await guard(`pin:${phone}`, d.pins.get(phone) === pinHash(phone, pin), "PIN");
-  return bind(d, phone, deviceId, pending!.deviceKey, true);
+  const pending = d.pendingLogin.get(key(address));
+  if (!pending || pending.deviceId !== deviceId || now() - pending.at > 300) fail("Session expired. Sign in with your wallet again.");
+  await checkPin(d, address, pin);
+  return bind(d, address, deviceId, pending!.deviceKey, true);
 }
 
 /** The account as the server sees it, so a copy saved on the device can't drift (e.g. after an update). */
-export async function getMe(phone: string): Promise<User | null> {
+export async function getMe(address: Address): Promise<User | null> {
   const d = await db();
-  return d.users.get(phone) ?? null;
+  return d.users.get(key(address)) ?? null;
 }
 
-export async function checkDevice(phone: string, deviceId: string) {
+export async function checkDevice(address: Address, deviceId: string) {
   const d = await db();
-  const bound = d.devices.get(phone);
+  const bound = d.devices.get(key(address));
   return { valid: !bound || bound === deviceId };
 }
 
-export async function setPin(phone: string, deviceId: string, pin: string): Promise<User> {
+export async function setPin(address: Address, deviceId: string, pin: string): Promise<User> {
   const d = await db();
-  const u = d.users.get(phone) ?? fail("Account not found.");
-  if (d.devices.get(phone) !== deviceId) fail("This device isn't registered to your account.");
+  const u = d.users.get(key(address)) ?? fail("Account not found.");
+  if (d.devices.get(key(address)) !== deviceId) fail("This device isn't registered to your account.");
   if (u.hasPin) fail("A security PIN is already set.");
   if (!/^\d{4}$/.test(pin) || /^(\d)\1{3}$/.test(pin) || "0123456789".includes(pin) || "9876543210".includes(pin))
     fail("Choose a 4-digit PIN that isn't repeated or sequential digits.");
-  d.pins.set(phone, pinHash(phone, pin));
+  d.pins.set(key(address), pinHash(address, pin));
   const next = { ...u, hasPin: true };
-  d.users.set(phone, next);
+  d.users.set(key(address), next);
   return next;
 }
 
 /** Confirms the user is present (app unlock, signing, releasing money). */
-export async function verifyPin(phone: string, pin: string) {
+export async function verifyPin(address: Address, pin: string) {
   const d = await db();
-  await guard(`pin:${phone}`, d.pins.get(phone) === pinHash(phone, pin), "PIN");
+  await checkPin(d, address, pin);
   return { ok: true as const };
 }
 
-export async function submitKyc(phone: string, form: { name: string; pan: string; fileName: string }): Promise<User> {
+export async function submitKyc(address: Address, form: { name: string; phone: string; pan: string; fileName: string }): Promise<User> {
   const d = await db();
-  const u = d.users.get(phone) ?? fail("Account not found.");
-  const next = { ...u, name: form.name.trim(), kycLevel: 1 as const };
-  d.users.set(phone, next);
-  return next;
-}
-
-export async function linkWallet(phone: string, wallet: Address): Promise<User> {
-  const d = await db();
-  const u = d.users.get(phone) ?? fail("Account not found.");
-  const next = { ...u, wallet };
-  d.users.set(phone, next);
+  const u = d.users.get(key(address)) ?? fail("Account not found.");
+  const phone = form.phone.replace(/\D/g, "").slice(-10);
+  if (!/^[6-9]\d{9}$/.test(phone)) fail("Enter a valid 10-digit mobile number.");
+  const taken = userByPhone(d, phone);
+  if (taken && key(taken.address) !== key(address)) fail("This mobile number is already registered to another account.");
+  const next = { ...u, name: form.name.trim(), phone, kycLevel: 1 as const };
+  d.users.set(key(address), next);
   return next;
 }
 
@@ -404,7 +450,7 @@ const toContact = (u: User, lastActivity?: number): Contact => ({
 
 export async function lookupContact(phone: string): Promise<Contact | null> {
   const d = await db();
-  const u = d.users.get(phone.replace(/\D/g, "").slice(-10));
+  const u = userByPhone(d, phone.replace(/\D/g, "").slice(-10));
   return u && u.role === "user" && u.name && u.kycLevel > 0 ? toContact(u) : null;
 }
 
@@ -433,14 +479,14 @@ export async function listPeople(address: Address): Promise<Contact[]> {
 }
 
 // ---------------------------------------------------------------- negotiation
-export async function createDraft(mePhone: string, n: NewDraft): Promise<Draft> {
+export async function createDraft(me: Address, n: NewDraft): Promise<Draft> {
   const d = await db();
-  const me = d.users.get(mePhone) ?? fail("Account not found.");
-  const other = d.users.get(n.counterpartyPhone.replace(/\D/g, "").slice(-10));
+  const self = d.users.get(key(me)) ?? fail("Account not found.");
+  const other = userByPhone(d, n.counterpartyPhone.replace(/\D/g, "").slice(-10));
   if (!other || other.role !== "user" || !other.name) fail("No verified Sakshi account with this mobile number.");
-  if (other!.phone === me.phone) fail("You can't create a payment with yourself.");
+  if (key(other!.address) === key(self.address)) fail("You can't create a payment with yourself.");
   const paying = n.role === "buyer";
-  const [buyer, seller] = paying ? [me, other!] : [other!, me];
+  const [buyer, seller] = paying ? [self, other!] : [other!, self];
   const draft: Draft = {
     id: `draft-${d.drafts.size + 1}-${Date.now().toString(36)}`,
     initiator: n.role,
@@ -534,7 +580,7 @@ export async function signSow(draftId: string, party: Party, version: number, si
   const d = await db();
   const v = d.sows.get(draftId) ?? fail("Prepare the agreement first.");
   const x = await getDraft(draftId);
-  await verifyPin(userByAddress(d, party === "buyer" ? x.buyer : x.seller)!.phone, pin);
+  await checkPin(d, party === "buyer" ? x.buyer : x.seller, pin);
   if (v.version !== version) fail("The agreement changed. Please review it again.");
   if (v.conflicts.length) fail("Resolve the open points before signing.");
   const signerUser = userByAddress(d, party === "buyer" ? x.buyer : x.seller) ?? fail("Account not found.");
@@ -604,27 +650,36 @@ export async function release(id: string, pin: string): Promise<Deal> {
   const d = await db();
   const deal = await getDeal(id);
   expect(deal, ["Funded", "Delivered"]);
-  await verifyPin(userByAddress(d, deal.buyer)!.phone, pin);
+  await checkPin(d, deal.buyer, pin);
   return setStatus(id, "Released", "Settled");
 }
 
-// ---------------------------------------------------------------- payments
+// ---------------------------------------------------------------- payments (PG's on-ramp shapes)
+const PAY_METHODS: PayMethod[] = ["upi_qr", "upi_id", "upi_app", "crypto"];
+const receipts = new Map<string, OnrampConfirm>(); // dealId → confirmation, so repeat confirms return the same one
+
 export async function onrampSession(id: string): Promise<OnrampSession> {
   const deal = await getDeal(id);
-  const usd = Number(deal.amount) / 1e6;
-  const inr = (usd * INR_PER_USD).toFixed(2);
+  const inr = ((Number(deal.amount) / 1e6) * INR_PER_USD).toFixed(2);
+  const upi = { payee: "sakshi.escrow@upi", note: `Sakshi escrow deal ${id}` };
   return {
     paymentId: `pay-${id}`,
-    amountUsd: usd.toFixed(2),
+    amountUsd: deal.amount, // MockUSD base units, like PG
     amountInr: inr,
-    upiUri: `upi://pay?pa=sakshi.escrow@upi&pn=Sakshi%20Escrow&am=${inr}&cu=INR&tn=Payment%20${id}`,
+    status: deal.status === "Accepted" ? "created" : "funded",
+    upi,
+    upiUri: `upi://pay?pa=${encodeURIComponent(upi.payee)}&pn=${encodeURIComponent("Sakshi Escrow")}&am=${inr}&cu=INR&tn=${encodeURIComponent(upi.note)}`,
   };
 }
-export async function onrampConfirm(id: string, method: PayMethod): Promise<Deal> {
+
+/** Mints MockUSD and funds the escrow (stand-in). Idempotent: paying twice funds once. */
+export async function onrampConfirm(id: string, method: PayMethod): Promise<OnrampConfirm> {
+  if (!PAY_METHODS.includes(method)) fail("Choose how you paid.");
   await new Promise((r) => setTimeout(r, 1200));
   const d = await db();
   const deal = await getDeal(id);
-  if (deal.status !== "Accepted") return deal; // paying twice funds once
+  const done = receipts.get(id);
+  if (deal.status !== "Accepted") return done ?? { status: "funded", mintTx: null, fundTx: null };
   const payer = userByAddress(d, deal.buyer);
   const inr = (Number(deal.amount) / 1e6) * INR_PER_USD;
   if (payer?.coolingUntil && payer.coolingUntil > now() && inr > COOLING_LIMIT_INR)
@@ -632,7 +687,11 @@ export async function onrampConfirm(id: string, method: PayMethod): Promise<Deal
       `This device was registered recently. For your safety, payments above ₹${COOLING_LIMIT_INR.toLocaleString("en-IN")} are allowed 24 hours after registering.`,
     );
   deal.paidWith = method;
-  return setStatus(id, "Funded", "DealFunded", { amount: deal.amount });
+  const minted = ev(d, "Minted", now(), { amount: deal.amount });
+  await setStatus(id, "Funded", "DealFunded", { amount: deal.amount });
+  const receipt: OnrampConfirm = { status: "funded", mintTx: minted.txHash, fundTx: deal.events.at(-1)!.txHash };
+  receipts.set(id, receipt);
+  return receipt;
 }
 
 // ---------------------------------------------------------------- complaints / resolution

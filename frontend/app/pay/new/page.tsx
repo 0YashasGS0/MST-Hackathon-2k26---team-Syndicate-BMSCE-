@@ -72,7 +72,7 @@ function NewPayment() {
     setBusy(true);
     setError(undefined);
     try {
-      const draft = await api.createDraft(user.phone, {
+      const draft = await api.createDraft(user.address, {
         role,
         counterpartyPhone: phone,
         purpose: String(f.get("purpose")),
