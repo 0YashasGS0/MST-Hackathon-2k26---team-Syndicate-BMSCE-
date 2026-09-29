@@ -173,6 +173,15 @@ describe("production configuration guard", () => {
     ADMIN_TOKEN: "Zq93random-admin-token-abcdef12",
     AUTH_DOMAIN: "app.example.com",
     CORS_ORIGINS: "https://app.example.com",
+    // format-only fixtures, not real keys or contracts
+    ESCROW_ADDRESS: "0x" + "ab".repeat(20),
+    USD_ADDRESS: "0x" + "cd".repeat(20),
+    DEPLOY_BLOCK: "123456",
+    ORG_KEY: "0x" + "01".repeat(32),
+    AGENT_KEY: "0x" + "02".repeat(32),
+    ARBITRATOR_KEY: "0x" + "03".repeat(32),
+    LLM_CHAIN: "groq:openai/gpt-oss-120b",
+    GROQ_API_KEY: "gsk_fixture",
   };
 
   it("accepts a safe config and ignores non-production", () => {
@@ -183,6 +192,13 @@ describe("production configuration guard", () => {
   it("rejects dev auth, weak or missing secrets, wildcard CORS and demo fallbacks", () => {
     const p = configProblems({ ...good, AUTH_DEV_HEADER: "true", ADMIN_TOKEN: "change-me-admin-token-xxxxxxxx", BACKEND_API_KEY: "", CORS_ORIGINS: "*", AGENT_DEMO_FALLBACK: "true", AUTH_SESSION_SECRET: "short" }).join("\n");
     for (const m of ["AUTH_DEV_HEADER", "ADMIN_TOKEN", "BACKEND_API_KEY", "CORS_ORIGINS", "AGENT_DEMO_FALLBACK", "AUTH_SESSION_SECRET"]) expect(p).toContain(m);
+  });
+
+  it("requires deployed contracts, three distinct system wallets and an LLM", () => {
+    const missing = configProblems({ ...good, ESCROW_ADDRESS: "0x", USD_ADDRESS: "", DEPLOY_BLOCK: "0", ORG_KEY: "0x", LLM_CHAIN: "", GROQ_API_KEY: "" }).join("\n");
+    for (const m of ["ESCROW_ADDRESS", "USD_ADDRESS", "DEPLOY_BLOCK", "ORG_KEY", "no LLM"]) expect(missing).toContain(m);
+    expect(configProblems({ ...good, ARBITRATOR_KEY: good.AGENT_KEY }).join("\n")).toContain("three different wallets");
+    expect(configProblems({ ...good, USD_ADDRESS: good.ESCROW_ADDRESS.toUpperCase().replace("0X", "0x") }).join("\n")).toContain("different contracts");
   });
 
   it("createApp refuses to start with an unsafe production config", () => {

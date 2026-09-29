@@ -9,7 +9,7 @@ arbitrator rules. This file lists the web-side defenses and what they do and do 
 | Threat | Control | Where |
 |---|---|---|
 | Impersonation | Identity comes only from PG's signed session cookie (EIP-4361-style wallet sign-in, single-use nonce, HMAC, `HttpOnly`, `SameSite=Lax`, `Secure` in prod). The `x-user-address` dev header is refused in production. | `backend/src/auth.ts`, `security.ts` |
-| Unsafe deployment | Production start fails on dev auth, missing/weak secrets, wildcard CORS or demo fallbacks. | `security.ts` `configProblems` |
+| Unsafe deployment | Production start fails on dev auth, missing/weak secrets, wildcard CORS, demo fallbacks, missing contract addresses/deploy block, missing or shared system keys (the AI agent can never be the arbitrator) or no LLM. `npm run preflight` checks the live chain roles before go-live. | `security.ts` `configProblems` |
 | Privileged actions by users | KYC approval needs `X-Admin-Token` (constant-time compare). The arbitrator console needs a wallet listed in `ARBITRATOR_ADDRESSES` (or the admin token), never just the public API key. | `routes/kyc.ts`, `dealAccess.ts` |
 | Acting on someone else's deal | Delivery (seller), evidence, dispute scoring and timeout (buyer/seller) are checked against the **on-chain** parties before any write. Drafts/SOWs: parties only; drafts are listable only by their own parties. | `dealAccess.ts`, `sow/router.ts` |
 | Forged SOW approval | Signatures are recovered with viem over the exact `sowHash`; only the caller's wallet or its **bound device key** is accepted. Versions are re-checked inside the write transaction. | `sow/router.ts`, `accounts.ts` |

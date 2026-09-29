@@ -14,7 +14,7 @@ npm run dev                     # http://localhost:5000, reloads on change
 npm start                       # production-style start (node --import tsx)
 ```
 
-`npm test` (vitest, no network), `npm run typecheck`. Demo data: `npm run seed` / `npm run reset` (B1, needs deployed
+`npm test` (vitest, no network), `npm run typecheck`, `npm run preflight` (go-live check against the chain, read-only). Demo data: `npm run seed` / `npm run reset` (B1, needs deployed
 contracts), `npm run seed:demo` (B2's four dispute scenarios). LLM tools: `npm run models`, `npm run smoke:merge`,
 `npm run smoke:score`, `npm run eval:disputes`.
 
