@@ -1,7 +1,8 @@
 # Deploying
 
 One VM (or any Docker host) runs three containers: **Caddy** (HTTPS), the **frontend** (Next.js) and the
-**backend** (Express + SQLite on a volume). The contracts are already on MST testnet (`deployments.md`).
+**backend** (Express + SQLite on a volume). The contracts are deployed on MST testnet (block 5800981); their addresses
+and the system wallets are in `deployments.md`. To redeploy, see §1b.
 
 ```
 browser ── https://app.example.com ──► Caddy ──► frontend:3000
@@ -13,8 +14,19 @@ to the API only when app and API are same-site.
 
 ## 1. Prerequisites
 - A host with Docker + Compose, ports 80/443 open, and DNS `A` records for both subdomains pointing at it.
-- Funded testnet system wallets (ORG, agent, arbitrator) and the contract addresses from `deployments.md`.
+- Three **different** testnet system wallets, all with tMSTC: ORG (deploys, owns, funds deals, KYC, gas drip), agent
+  (proposes dispute splits), arbitrator (final rulings). The server refuses to start if two of them are the same.
+- `DealEscrow` + `MockUSD` deployed on MST testnet (below), recorded in `deployments.md`.
 - An LLM key (`GROQ_API_KEY` / `GEMINI_API_KEY`, see `docs/progress/B2.md`).
+
+## 1b. Deploy the contracts (once)
+```bash
+cd contracts && npm ci
+node deploy.js --write     # reads ORG/AGENT/ARBITRATOR keys from backend/.env, asks before sending
+```
+It deploys MockUSD and DealEscrow(usd, agent, arbitrator), has ORG approve the escrow, checks all of it on-chain,
+fills the rows in `deployments.md` (commit that) and prints `ESCROW_ADDRESS`, `USD_ADDRESS`, `DEPLOY_BLOCK` and the
+two `NEXT_PUBLIC_*` values for step 2/3. Then send the agent and arbitrator a few tMSTC from ORG.
 
 ## 2. Configure
 ```bash
@@ -37,7 +49,17 @@ Set at least (generate every secret with `openssl rand -hex 32`):
 | `LLM_CHAIN` + its key(s) | e.g. `groq:openai/gpt-oss-120b` + `GROQ_API_KEY` |
 
 `AUTH_DEV_HEADER`, `AGENT_DEMO_FALLBACK` and `AGENT_FALLBACK_ON_FAILURE` must stay off. **The backend refuses to
-start in production** if any of the rules above is violated (it prints every problem).
+start in production** if any of the rules above is violated, including missing contract addresses, `DEPLOY_BLOCK`,
+the three keys (they must differ) or an LLM (it prints every problem).
+
+**Preflight** (read-only, sends nothing) — run it before going live and after any config change:
+```bash
+cd backend && npm ci && npm run preflight
+# or, on the Docker host after building:  docker compose run --rm backend npm run preflight
+```
+It checks the config guard, that the RPC is MST testnet, that both contracts exist, that their owner/agent/arbitrator/
+stablecoin match your keys and addresses, that ORG approved the escrow, that all three wallets have gas and that the
+data directory is writable. It must end with **Ready to go live.**
 
 ## 3. Run
 ```bash

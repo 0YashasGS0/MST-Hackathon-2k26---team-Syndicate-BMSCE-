@@ -1,7 +1,5 @@
 # Yescro — AI-mediated escrow payments on MST Blockchain
 
-> *Life is uncertain, payments need not be.*
-
 **Pay anyone for work, safely.** The buyer's money is locked in an escrow smart contract on
 [MST Blockchain](https://mstblockchain.com) until the work is delivered. If there's a disagreement, an AI agent
 reads the agreed statement of work and the evidence and proposes a fair split, computed by an open formula
@@ -74,7 +72,7 @@ backend/      Express API (TypeScript, run with tsx): routes, chain clients, eve
   src/accounts.ts  device binding, security PIN, profile, people
 frontend/     Next.js 16 app (runs without the backend against its built-in mock backend)
 shared/       Code both sides must run identically: SOW schema, hashSow/hashJson, split formula, split.wasm, verifyRuling
-contracts/    DealEscrow.sol + MockUSD.sol (Foundry)
+contracts/    DealEscrow.sol + MockUSD.sol (Foundry), deploy.js (deploy + on-chain checks + deployments.md)
 docs/         API.md (interfaces), MVP.md (design), DEPLOY.md, TEAM_ROADMAP.md, STATUS.md, progress/ logs
 deploy/       Caddyfile (HTTPS reverse proxy)
 ```
@@ -110,8 +108,9 @@ cd frontend && npx eslint . && npm run build
 
 ## Deploy
 
-Docker Compose with Caddy (automatic HTTPS) — see **[docs/DEPLOY.md](docs/DEPLOY.md)**. The backend refuses to start
-in production with an unsafe configuration.
+Docker Compose with Caddy (automatic HTTPS) — see **[docs/DEPLOY.md](docs/DEPLOY.md)**:
+`node deploy.js --write` (contracts) → fill `backend/.env` → `npm run preflight` → `docker compose up -d --build`.
+The backend refuses to start in production with an unsafe or incomplete configuration.
 
 ## Security
 

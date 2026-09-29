@@ -6,7 +6,7 @@
 ## Checkpoints
 | Hour | Goal | Status |
 |---|---|---|
-| 1 | Contracts live + verified; `docs/API.md` frozen | ⬜ |
+| 1 | Contracts live + verified; `docs/API.md` frozen | ✅ |
 | 4 | Happy path via API | ⬜ |
 | 6 | Happy path in UI | ⬜ |
 | 7 | WASMify decision (SDK or fallback) | ⬜ |
@@ -15,11 +15,11 @@
 | 10 | Feature freeze | ⬜ |
 
 ## Deployed (see deployments.md for full details)
-- MockUSD: —
-- DealEscrow: —
+- MockUSD: 0x528707B3CD2266c07744b680b5c9dc08a9886472
+- DealEscrow: 0x653aA806b4b00d13446aEbA96A6bE60A68B1AefA (deploy block 5800981)
 
 ## Team-wide blockers
-- none
+- none (contracts deployed at block 5800981; before going live run `cd backend && npm run preflight` with the production `.env`)
 
 ## Decisions
 | Time | Decision | By |
@@ -33,4 +33,5 @@
 | 09-29 | Arbitrator console is a separate admin surface, not part of the user app | FE |
 | 09-29 | Amounts shown in ₹ at a fixed display rate (84), matching PG's demo quote | FE |
 | 09-29 | Security hardening + Docker/Caddy deployment (`SECURITY.md`, `docs/DEPLOY.md`); production start refuses unsafe config; CI on every PR | B2 (owner request) |
+| 09-29 | Go-live tooling: `contracts/deploy.js --write` (deploy + on-chain checks + fills deployments.md), `npm run preflight` (read-only readiness check), production start requires contracts/keys/LLM, backend ABI regenerated from source and CI-checked, CI builds + smoke-tests both Docker images. Remaining: B1 runs the deploy | B2 (owner request) |
 | 09-29 | All FE calls have real endpoints; users sign escrow actions with their own wallet; device-key registry live; ports 5000 (API) / 3000 (app); contracts NOT yet deployed (deployments.md placeholders removed) | B2 (owner request) |
