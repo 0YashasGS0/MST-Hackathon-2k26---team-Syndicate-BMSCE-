@@ -12,10 +12,12 @@
 <!-- Format: - [ ] @B1/@B2/@PG/@FE: what you need — why (hh:mm) -->
 - [ ] @nikil-dev (B1): the backend is now consolidated under `backend/`; wire `createPgIntegration(...)` with B1's shared `db`, `pub`, and `org`, mount its `paymentsRouter` and `authRouter`, and invoke `gasDripAddress(address)` after KYC approval. Remove B1's duplicate payment routes/table definitions at merge while preserving the indexer's compatible payout columns.
 - [ ] @nikil-dev (B1): resolve the `backend/src/auth.ts` collision by retaining PG's API-key middleware and session auth. `getCaller(req)` reads the verified session; B2 should re-export it rather than trusting `x-user-address`.
+- [ ] @nikil-dev (B1): make the browser's PG payment routes callable with the verified wallet session and credentialed CORS; do not require a private shared `X-API-Key` in frontend JavaScript.
 - [ ] @nikil-dev (B1): add Vitest to the merged backend package and replace the placeholder `test` script. From `backend/`, PG's focused command is `npx vitest run test/auth.test.ts test/wallet-connector.test.ts test/transaction-helper.test.ts test/payments.test.ts`.
 - [ ] @nikil-dev (B1): provide real deployment transaction hashes, block numbers, explorer links, and verification status in `deployments.md`; confirm the ORG allowance and `DEPLOY_BLOCK` before end-to-end payment QA.
 - [ ] @B2 (yashas): export PG's browser-safe `wallet-connector.ts` and `transaction-helper.ts` through `@kernel-exploits/shared` with the package build so FE does not import browser code from `backend/`.
-- [ ] @FE (chandana): use the existing wallet SIWE flow for login; consume session `upiUri`, send `{ method: "upi_qr" | "upi_id" | "upi_app" | "crypto" }` on confirmation, and use the shared wallet/transaction exports after B2 publishes them.
+- [ ] @B2 (yashas): reconcile `docs/API.md` with PG's implemented auth and payment interfaces before merge. The latest `origin/yashas` snapshot (`ae13a74`) omits `/auth/nonce`, `/auth/verify`, and `/auth/logout`, still describes `/auth/saral` as accepting a session proof and `/auth/wallet` as the MetaMask login, omits `upi`/`upiUri` on the on-ramp session, and documents confirmation without PG's required display-only `method` field. Preserve the PG definitions already on `geeth-dev`.
+- [ ] @FE (chandana): on `origin/chandana` (reviewed at `149e136`), replace the live phone/OTP/SARAL calls in `frontend/lib/api.ts` and login UI with PG's `GET /auth/nonce?address=...`, `POST /auth/verify { message, signature }`, and `POST /auth/logout`; send requests with credentials so the HttpOnly session cookie works. `POST /auth/saral` is fail-closed and does not accept OTP/device fields. Correct `onrampConfirm`'s live return type to `{ status, mintTx, fundTx }` and align `OnrampSession` with the documented `upi` and `upiUri` fields. Replace HTTP mutation calls for `proposeDeal`, `acceptDeal`, `markDelivered`, `release`, `raiseDispute`, `acceptResolution`, and `escalate` with wallet-signed actions through B2's shared exports; upload delivery/evidence to B1 first and sign using the returned hash. Explain that `crypto` confirmation is display-only metadata on the Mock UPI/ORG mint-and-fund flow, not a user-wallet transfer. Keep mocks behind the existing switch. These are FE-owned changes; PG's browser modules are not importable from `backend/` in the browser bundle.
 - [ ] @B2: confirm whether any PG endpoint consumes `hashSow` / `hashJson`; current PG flows do not hash SOW or reasoning data.
 
 ## Interface changes
@@ -36,6 +38,20 @@
 - **Tested:** how it was verified (curl, test, explorer tx link)
 - **Next:** what comes next for this role
 -->
+
+### 2026-09-29 — Chandana FE integration review
+- **What:** Reviewed the latest available `origin/chandana` snapshot (`149e136`) against PG's documented auth, payment, and wallet-transaction interfaces. Found the FE live auth still targets phone/OTP and undocumented SARAL device endpoints; the on-ramp confirmation type expects a `Deal` instead of PG's response; delivery/release/resolution actions still mutate through HTTP; and the crypto option presents PG's display-only confirmation as wallet payment. Recorded exact FE and B2 handoffs without editing their owned paths.
+- **Files:** `docs/progress/PG.md`
+- **How to use:** FE should use the requests above; after B2 exports the browser-safe wallet modules from `@kernel-exploits/shared`, FE can call `sendPgContractAction()` for user-signed escrow actions. Keep the mock API path available for UI demos.
+- **Tested:** Documentation/source review only; no tests or application code changed.
+- **Next:** FE applies its integration fixes on its branch; B2 provides shared exports. PG can then help resolve any interface mismatch in PG-owned files.
+
+### 2026-09-29 — Yashas B2 branch integration review
+- **What:** Reviewed `origin/yashas` at `ae13a74`. B2 now has a built ESM `@kernel-exploits/shared` with browser-safe SOW/hash, split, and verification exports, plus Express routers that accept injected PG `getCaller` and a shared SQLite store. The current package index does not export PG's wallet connector or transaction helper. B2's latest `docs/API.md` also omits the implemented PG SIWE and UPI request/response fields, so recorded a docs reconciliation request. PG's `getCaller(req)` and `requireApiKey` signatures are compatible with B2's documented router integration; direct wallet signing requires no separate device-key registry.
+- **Files:** `docs/progress/PG.md`
+- **How to use:** B1 injects PG's `getCaller` into B2's routers and shares the SQLite connection with `SowStore`; FE imports B2's SOW/hash/split/verify exports from `@kernel-exploits/shared`. Keep PG's wallet modules in the shared-package handoff request until they are actually exported.
+- **Tested:** Branch and interface source review only; no code or tests changed.
+- **Next:** B2 reconciles the shared API documentation and confirms the wallet-module export plan; B1 mounts the routers with PG auth.
 
 ### 2026-09-29 — Merged yashas (B1 + B2) into geeth-dev; PG's real auth/payments replace B1's placeholders (done by B2's agent at the repo owner's request)
 - **What:** merged `origin/yashas` (which already contains `nikil-dev`). Conflicts only in `backend/src/auth.ts` and `backend/src/payments/b1-integration.ts` → PG's real files (B1's placeholders had the same exports). B1's `index.ts` already calls `createPgIntegration({ database, publicClient, orgClient, escrowAddress, usdAddress, escrowAbi, usdAbi, sendContractTx })` and mounts `authRouter` + `paymentsRouter`, and injects PG's `getCaller` into B2's routers. Two type-only fixes for the shared stack (Express 5, strict viem types): `mint.ts` passes `chain: orgClient.chain` to `writeContract`; `routes.ts` stringifies route params before `parseDealId`.
