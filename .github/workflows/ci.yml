@@ -27,11 +27,12 @@ jobs:
             shared/package-lock.json
             backend/package-lock.json
             contracts/package-lock.json
-      - name: contracts (compile)
+      - name: contracts (compile + backend ABI in sync)
         working-directory: contracts
         run: |
           npm ci
-          npm run compile
+          node deploy.js --write-abi
+          git diff --exit-code -- ../backend/abi || (echo "backend/abi is stale: run 'node deploy.js --write-abi' in contracts/" && exit 1)
       - name: shared
         working-directory: shared
         run: |
@@ -69,3 +70,26 @@ jobs:
       - run: npx eslint .
       - run: npm run build
       - run: npm audit --audit-level=high
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: build images
+        run: |
+          docker build -f backend/Dockerfile -t kx-backend .
+          docker build -t kx-frontend --build-arg NEXT_PUBLIC_API_URL=https://api.example.com frontend
+      - name: smoke test
+        run: |
+          # production backend must refuse to start without a real config
+          if docker run --rm kx-backend; then echo "backend started with an empty production config" && exit 1; fi
+          # dev-mode backend and the frontend must serve
+          docker run -d --name be -e NODE_ENV=development -p 5000:5000 kx-backend
+          docker run -d --name fe -p 3000:3000 kx-frontend
+          # /drafts answers 401 without the chain (unlike /health, which reads the MST RPC)
+          for i in $(seq 30); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' localhost:5000/drafts)" = 401 ] && curl -sf -o /dev/null localhost:3000/ && exit 0
+            sleep 2
+          done
+          docker logs be; docker logs fe; exit 1

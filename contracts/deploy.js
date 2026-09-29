@@ -6,7 +6,8 @@
 //
 //   cd contracts && npm ci
 //   node deploy.js --compile-only    # compile only, no keys or network needed
-//   node deploy.js                   # deploy (asks for confirmation)
+//   node deploy.js --write-abi       # also refresh backend/abi/*.json from the sources (CI checks they match)
+//   node deploy.js --write           # deploy (asks for confirmation) and fill the contract rows in deployments.md
 //
 // Keys: ORG_KEY from the environment or backend/.env (never printed). Agent/arbitrator: AGENT_ADDRESS /
 // ARBITRATOR_ADDRESS, else derived from AGENT_KEY / ARBITRATOR_KEY. RPC: MST_RPC_URL (default MST testnet).
@@ -104,7 +105,13 @@ async function main() {
   const art = compile();
   const ctor = art.escrow.abi.find((x) => x.type === "constructor");
   console.log(`OK. DealEscrow constructor: (${ctor.inputs.map((i) => `${i.type} ${i.name}`).join(", ")})`);
-  if (args.has("--compile-only")) return;
+  if (args.has("--write-abi")) {
+    for (const [name, a] of [["DealEscrow", art.escrow], ["MockUSD", art.usd]]) {
+      fs.writeFileSync(path.join(__dirname, "..", "backend", "abi", `${name}.json`), JSON.stringify(a.abi, null, 2) + "\n");
+    }
+    console.log("Wrote backend/abi/DealEscrow.json and MockUSD.json");
+  }
+  if (args.has("--compile-only") || args.has("--write-abi")) return;
 
   const env = loadEnv();
   const rpc = env.MST_RPC_URL || DEFAULT_RPC;
@@ -176,10 +183,22 @@ async function main() {
     console.log(`  ${pass ? "ok  " : "FAIL"} ${name}${pass ? "" : ` = ${got}, expected ${want}`}`);
   }
 
+  const rows = {
+    MockUSD: `| MockUSD | ${usd} | ${usdR.transactionHash} | ${usdR.blockNumber} | ${EXPLORER}/address/${usd} | ⬜ |`,
+    DealEscrow: `| DealEscrow | ${escrow} | ${escrowR.transactionHash} | ${escrowR.blockNumber} | ${EXPLORER}/address/${escrow} | ⬜ |`,
+  };
+  if (args.has("--write") && ok && chainId === MST_TESTNET_ID) {
+    const file = path.join(__dirname, "..", "deployments.md");
+    let md = fs.readFileSync(file, "utf8");
+    for (const [name, row] of Object.entries(rows)) md = md.replace(new RegExp(`^\\| ${name} \\|.*$`, "m"), row);
+    md = md.replace(/^> The previous values here were placeholders:.*\n/m, "");
+    fs.writeFileSync(file, md);
+    console.log("\nUpdated deployments.md (commit it).");
+  }
   console.log(`
 deployments.md:
-| MockUSD | ${usd} | ${usdR.transactionHash} | ${usdR.blockNumber} | ${EXPLORER}/address/${usd} | ⬜ |
-| DealEscrow | ${escrow} | ${escrowR.transactionHash} | ${escrowR.blockNumber} | ${EXPLORER}/address/${escrow} | ⬜ |
+${rows.MockUSD}
+${rows.DealEscrow}
 
 backend/.env:
 ESCROW_ADDRESS=${escrow}
