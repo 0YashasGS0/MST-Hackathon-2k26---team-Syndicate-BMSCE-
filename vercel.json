@@ -1,0 +1,17 @@
+{
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/.next",
+  "installCommand": "cd frontend && npm install",
+  "framework": "nextjs",
+  "env": {
+    "ENABLE_MOCK_BACKEND": "true",
+    "NEXT_PUBLIC_API_URL": "/api/mock",
+    "NEXT_PUBLIC_LIVE_ENDPOINTS": "",
+    "NEXT_PUBLIC_API_KEY": "d614c236eb7901c5b266cd956f3bd485",
+    "NEXT_PUBLIC_ESCROW_ADDRESS": "0x653aA806b4b00d13446aEbA96A6bE60A68B1AefA",
+    "NEXT_PUBLIC_USD_ADDRESS": "0x528707B3CD2266c07744b680b5c9dc08a9886472",
+    "NEXT_PUBLIC_MST_RPC_URL": "https://testnetrpc.mstblockchain.com",
+    "NEXT_PUBLIC_MST_WS_URL": "wss://testnetrpc.mstblockchain.com",
+    "NEXT_PUBLIC_EXPLORER": "https://testnet.mstscan.com"
+  }
+}
