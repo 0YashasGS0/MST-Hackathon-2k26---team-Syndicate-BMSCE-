@@ -125,17 +125,23 @@ export default function LoginPage() {
                     </Button>
                   ))}
                   {!wallets.length && (
-                    <div className="space-y-3 pt-4 border-t border-line/40">
-                      <p className="text-sm font-semibold">Demo Accounts (No Wallet Needed)</p>
-                      <Button size="lg" variant="secondary" className="w-full" disabled={!!busy} onClick={() => connectDemo("9000000001", "Priya Sharma")}>
-                        {busy === "demo-9000000001" ? "Signing in…" : "Sign in as Priya Sharma (Buyer)"}
+                    <div className="space-y-3">
+                      <Button size="lg" className="w-full" disabled={!!busy} onClick={() => connect()}>
+                        <WalletIcon className="mr-2 h-5 w-5" />
+                        {busy === "demo" ? "Checking…" : "Continue with Demo Wallet"}
                       </Button>
-                      <Button size="lg" variant="secondary" className="w-full" disabled={!!busy} onClick={() => connectDemo("9000000002", "Ravi Kumar")}>
-                        {busy === "demo-9000000002" ? "Signing in…" : "Sign in as Ravi Kumar (Seller)"}
-                      </Button>
-                      <Button size="lg" variant="secondary" className="w-full" disabled={!!busy} onClick={() => connectDemo("9000000009", "Arbitrator Desk")}>
-                        {busy === "demo-9000000009" ? "Signing in…" : "Sign in as Arbitrator"}
-                      </Button>
+                      <div className="space-y-3 pt-4 border-t border-line/40">
+                        <p className="text-sm font-semibold">Demo Accounts (No Wallet Needed)</p>
+                        <Button size="lg" variant="secondary" className="w-full" disabled={!!busy} onClick={() => connectDemo("9000000001", "Priya Sharma")}>
+                          {busy === "demo-9000000001" ? "Signing in…" : "Sign in as Priya Sharma (Buyer)"}
+                        </Button>
+                        <Button size="lg" variant="secondary" className="w-full" disabled={!!busy} onClick={() => connectDemo("9000000002", "Ravi Kumar")}>
+                          {busy === "demo-9000000002" ? "Signing in…" : "Sign in as Ravi Kumar (Seller)"}
+                        </Button>
+                        <Button size="lg" variant="secondary" className="w-full" disabled={!!busy} onClick={() => connectDemo("9000000009", "Arbitrator Desk")}>
+                          {busy === "demo-9000000009" ? "Signing in…" : "Sign in as Arbitrator"}
+                        </Button>
+                      </div>
                     </div>
                   )}
                   {wallets.length > 0 && (
