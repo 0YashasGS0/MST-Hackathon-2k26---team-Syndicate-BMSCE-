@@ -444,6 +444,14 @@ export class SowStore {
     return reasoningHash;
   }
 
+  /** Every stored ruling for a deal, newest first (agent proposals and the arbitrator's final ruling). */
+  getRulingsForDeal(dealId: number): { reasoningHash: string; reasoning: AnyReasoning; createdAt: number }[] {
+    const rows = this.db
+      .prepare(`SELECT reasoning_hash, reasoning_json, created_at FROM dispute_rulings WHERE deal_id = ? ORDER BY created_at DESC, rowid DESC`)
+      .all(dealId) as { reasoning_hash: string; reasoning_json: string; created_at: number }[];
+    return rows.map((r) => ({ reasoningHash: r.reasoning_hash, reasoning: JSON.parse(r.reasoning_json) as AnyReasoning, createdAt: r.created_at }));
+  }
+
   /** The stored ruling for a reasoningHash (any hex case), or undefined. */
   getRuling(reasoningHash: string): AnyReasoning | undefined {
     const row = this.db.prepare(`SELECT reasoning_json FROM dispute_rulings WHERE reasoning_hash = ?`).get(reasoningHash.toLowerCase()) as

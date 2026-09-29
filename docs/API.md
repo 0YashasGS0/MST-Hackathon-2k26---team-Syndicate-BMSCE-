@@ -3,6 +3,7 @@
 > Base URL: `NEXT_PUBLIC_API_URL`. JSON everywhere. Errors: `{ "error": { "code": "BadStatus", "message": "..." } }`.
 > Amounts: strings in token base units (6 decimals) — `"100000000"` = 100 mUSD. Hashes: `0x`-prefixed 32-byte hex.
 > Any change after freeze: update this file in the same commit + note under "Interface changes" in your progress log.
+> Every route: security headers, an exact-origin CORS allowlist (`CORS_ORIGINS`, credentials allowed), per-IP rate limits → `429 { error: { code: "RateLimited" } }`, JSON bodies ≤ 100 KB (`413`), generic `500 { error: { code: "Internal" } }`. `GET /arbitrator/cases` needs `x-admin-token`. See `SECURITY.md`.
 
 ## Auth & KYC
 | Method | Path | Owner | Body → Response |
@@ -11,8 +12,16 @@
 | POST | `/auth/verify` | PG | `{ message, signature }` → `{ user, expiresIn }` plus HttpOnly `mst_session` cookie |
 | POST | `/auth/logout` | PG | — → `204` and clears the session cookie |
 | POST | `/auth/saral` | PG | `{ address, saralSessionProof }` → `503` until mentor docs and a docs-backed verifier are available |
-| POST | `/kyc/submit` | B1 | multipart `file` → `User` |
-| POST | `/admin/kyc/:address/approve` | B1 | header `x-admin-token` → `{ txHash }` |
+| POST | `/kyc/submit` | B1 | multipart `name`, `phone` (10-digit mobile), `pan` (**never stored**), `file` (one ID document ≤ 10 MB) → `Account`. **Signed-in only**, for the caller's own wallet (an `address` field that differs → 403). Phone must be unique (409 `PhoneTaken`) |
+| POST | `/auth/device/bind` | — | `{ deviceId, deviceKey }` → `{ status: "ok", user: Account } \| { status: "pin_required" }`. First device, or the account's own device → bound. An account with a PIN that is bound to another device needs `/auth/new-device` |
+| POST | `/auth/new-device` | — | `{ deviceId, pin }` → `Account`. Within 5 min of the bind attempt; moves the account to this device, de-registers the old one, starts a 24 h cooling period (`coolingUntil`) |
+| POST | `/auth/pin` | — | `{ deviceId, pin }` → `Account`. Once, from the bound device; 4 digits, not repeated or sequential (400 `WeakPin`) |
+| POST | `/auth/pin/verify` | — | `{ pin }` → `{ ok: true }`. Wrong → 403 `WrongPin` (attempts left); 5 wrong → 429 `PinLocked` for 5 min. Stored as salted scrypt |
+| POST | `/auth/device` | — | `{ deviceId }` → `{ valid }` (false once the account moved to another device) |
+| GET | `/users/me` | — | → `Account` |
+| GET | `/users/by-phone/:phone` | — | → `Contact \| null` (users with a name + KYC ≥ 1). Signed-in only; rate-limited |
+| GET | `/people?address=` | — | → `Contact[]`: counterparts from your drafts and deals, most recent first. Own list only |
+| POST | `/admin/kyc/:address/approve` | B1 | header `x-admin-token` → `{ txHash }` (the API key alone → 401) |
 
 ## Drafts & SOW
 > B2's router, mounted by B1: `app.use(createSowRouter({ store, getCaller, isAuthorizedSigner }))`. Paths are `/drafts/*` so they never clash with B1's on-chain `/deals/:id`.
@@ -36,15 +45,20 @@
 ## Deals (on-chain backed)
 | Method | Path | Owner | Body → Response |
 |---|---|---|---|
-| GET | `/deals?address=0x..` | B1 | → `DealSummary[]` |
-| GET | `/deals/:id` | B1 | → `Deal` |
-| POST | `/deals/:id/delivery` | B1 | multipart `file` → `{ hash }` |
-| POST | `/deals/:id/evidence` | B1 | multipart `files[]`, `complaint` → `{ hash }` |
-| POST | `/deals/:id/resolve` | B1 (calls B2) | — → `{ scores, buyerBps, reasoningHash, txHash }` |
-| POST | `/deals/:id/timeout` | B1 | — → `{ txHash }` |
+| GET | `/deals?address=0x..` | B1 | → `Deal[]` (plain array) for the signed-in wallet; `address`, if given, must be the caller's |
+| GET | `/deals/:id` | B1 | → `Deal`. The deal's parties (on-chain) or an arbitrator; 404 unknown; 502 chain unavailable |
+| GET | `/deals/:id/complaint` | B1 | → `Complaint \| null` (parties or an arbitrator) |
+| GET | `/deals/:id/resolution` | B1 (B2's ruling) | → `Resolution` = the AI agent's `{ scores, buyerBps }`; 404 `NoResolution` until proposed |
+| GET | `/arbitrator/cases` | B1 | → `Deal[]` that are `Escalated` or already ruled by an arbitrator. Arbitrator wallet (`ARBITRATOR_ADDRESSES`) or `x-admin-token` |
+| POST | `/deals/:id/delivery` | B1 | multipart `files[]` (≤ 5 × 10 MB) → `{ hash }`. The caller must be the deal's **seller** on-chain (403 otherwise, 404 unknown deal) |
+| POST | `/deals/:id/evidence` | B1 | multipart `files[]`, `complaint` → `{ hash }`. Caller must be the deal's buyer or seller on-chain |
+| POST | `/deals/:id/resolve` | B1 (calls B2) | `{ complaintText?, deliveryNotes?, evidenceNotes? }` → `{ scores, buyerBps, reasoningHash, txHash }`. Caller must be a party on-chain; rate-limited; 409 `NoSow`, 422 `ScoringFailed`, 502 `LlmUnavailable` |
+| POST | `/deals/:id/timeout` | B1 | — → `{ txHash }`. Caller must be a party on-chain; rate-limited |
 | GET | `/deals/:id/sow` | B2 | → `SowVersion` of the draft linked to deal `:id` (with signatures). Parties of the deal only (401/403); 404 `NotFound` if no linked SOW; 400 for a bad id. **Alias:** `GET /deals/:id/agreement`. Mounted via `createDisputeRouter({ store, getCaller })` |
 | GET | `/deals/:id/verify` | B2 | → `VerifyResponse` (below). Reads `getDeal(id)` on MST. 404 `NoRuling` when there's no `reasoningHash` on-chain yet; 404 `NotFound` for an unknown deal; 400 for a bad id; 502 `ChainUnavailable`. Mounted via `createDisputeRouter()` |
-| POST | `/arbitrator/deals/:id/rule` | B1 | header `x-admin-token`, `{ buyerBps, ruling }` → `{ txHash }` |
+| POST | `/arbitrator/deals/:id/rule` | B1 | `{ buyerBps (0–10000), ruling \| note }` → `Deal & { reasoningHash, txHash }`. Arbitrator wallet or `x-admin-token`; the ruling is stored (`saveRuling`) before `arbitrate()` so it verifies |
+
+> **Party actions are signed by the user's own wallet**, not the backend: `markDelivered(id, hash)` (hash from `/deals/:id/delivery`), `raiseDispute(id, hash)` (hash from `/deals/:id/evidence`), `release(id)`, `acceptResolution(id)`, `escalate(id)` on `DealEscrow`. Delivery/evidence return `hash` = the single file's keccak256, or `hashJson({ files: [keccak…], note })` when there is a note or several files.
 
 ## Payments
 | Method | Path | Owner | Body → Response |
@@ -126,14 +140,23 @@ type ProposeDealArgs = { seller: string; amount: string; sowHash: string; delive
 
 type ChainEvent = { name: string; args: Record<string, string>; txHash: string; block: number; timestamp: number };
 
+// The one Deal shape (backend/src/dealView.ts = frontend/lib/types.ts). Parties/amount/status/hashes from on-chain getDeal.
 type Deal = {
-  id: number; buyer: string; seller: string; amount: string;
+  id: string; draftId: string; title: string;                    // title/draftId from the linked SOW ("" / "Deal <id>" if none)
+  buyer: string; seller: string; buyerName: string; sellerName: string; amount: string;
   status: "Proposed"|"Accepted"|"Funded"|"Delivered"|"Disputed"|"ResolutionProposed"|"Escalated"|"Released"|"Refunded"|"Resolved"|"Cancelled";
-  sowHash: string; deliveryHash: string; evidenceHash: string; reasoningHash: string;
-  deliverBy: number; reviewPeriod: number; deliveredAt: number;
-  proposedBuyerBps: number; buyerAccepted: boolean; sellerAccepted: boolean;
-  sow?: SOW; events: ChainEvent[];
+  sowHash: string; deliverBy: number; reviewPeriod: number; deliveredAt?: number; deliveryNote?: string;
+  buyerBps?: number;                                              // proposed / ruled refund share
+  accepted?: { buyer: boolean; seller: boolean };                 // while ResolutionProposed
+  ruledBy?: "ai" | "arbitrator"; arbitratorNote?: string; paidWith?: "upi_qr"|"upi_id"|"upi_app"|"crypto";
+  events: (ChainEvent & { logIndex: number })[];
 };
+type Account = { address: string; phone: string; name?: string; role: "user" | "arbitrator"; deviceId: string; deviceKey?: string;
+  kycLevel: 0 | 1 | 2; hasPin: boolean; deviceBoundAt?: number; coolingUntil?: number };      // = frontend `User`
+type Contact = { phone: string; name: string; bankingName: string; address: string; lastActivity?: number };
+type Complaint = { dealId: string; raisedBy: "buyer" | "seller"; text: string; deliverableIds: string[];
+  attachments: { name: string; type: string; size: number }[]; createdAt: number };
+type Resolution = { scores: { id: string; fulfilledPct: number; rationale: string; evidenceRefs: string[] }[]; buyerBps: number };
 
 type DisputeScores = { scores: { id: string; fulfilledPct: number; rationale: string; evidenceRefs: string[] }[] }; // v1/v2; integers 0..100
 

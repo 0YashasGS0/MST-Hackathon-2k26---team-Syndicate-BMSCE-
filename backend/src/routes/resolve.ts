@@ -1,11 +1,13 @@
 // Hour 5-8 — Dispute & arbitration plumbing, per TEAM_ROADMAP.md §1.
 // The SOW, the scoring and the ruling storage are B2's (merge plan): store.getSowForDeal, scoreDispute, store.saveRuling.
-import { Router, Request, Response, NextFunction } from "express";
+import { Router, Request, Response } from "express";
 import { agent, arbitrator, org, escrowAbi, ESCROW, pub, sendContractTx } from "../chain.js";
 import { DemoFallbackError, DisputeScoringError, LlmUnavailableError, scoreDispute } from "../agent/index.js";
 import { sowStore as store } from "../sowStore.js";
 import { db } from "../db.js";
 import { requireApiKey } from "../auth.js";
+import { requireArbitrator, requireDealParty } from "../dealAccess.js";
+import { readOnchainDeal, toDealView } from "../dealView.js";
 import { sendChainError } from "../errors.js";
 
 const DEAL_ID = /^\d+$/;
@@ -27,19 +29,13 @@ function filesSummary(dealId: number, kind: "delivery" | "evidence"): string {
 
 export const resolveRouter = Router();
 
-// A separate, simpler token for the arbitrator console (per doc: "protect it
-// with a simple admin token"), so a normal frontend API key can't rule on disputes.
-function requireAdminToken(req: Request, res: Response, next: NextFunction) {
-  const token = req.header("X-Admin-Token");
-  if (!token || token !== process.env.ADMIN_TOKEN) {
-    return res.status(401).json({ error: "unauthorized", message: "missing or invalid X-Admin-Token header" });
-  }
-  next();
-}
+// Arbitrator routes use requireArbitrator (dealAccess.ts): a signed-in wallet in ARBITRATOR_ADDRESSES, or the operator's
+// X-Admin-Token. The public frontend API key alone can't rule on disputes.
 
 // POST /deals/:id/resolve — load SOW + delivery/evidence, call scoreDispute(),
 // have the agent wallet call proposeResolution, store the full reasoning.
-resolveRouter.post("/deals/:id/resolve", requireApiKey, async (req: Request, res: Response) => {
+// A party of the deal (checked on-chain) asks the agent to score the dispute; rate-limited in app.ts.
+resolveRouter.post("/deals/:id/resolve", requireApiKey, requireDealParty(["buyer", "seller"]), async (req: Request, res: Response) => {
   if (!ESCROW || !agent) return void res.status(500).json({ error: { code: "ChainUnconfigured", message: "chain not configured yet" } });
   if (!DEAL_ID.test(String(req.params.id))) return void res.status(400).json({ error: { code: "BadRequest", message: "deal id must be a non-negative integer" } });
   const dealId = Number(req.params.id);
@@ -86,7 +82,7 @@ resolveRouter.post("/deals/:id/resolve", requireApiKey, async (req: Request, res
 
 // POST /arbitrator/deals/:id/rule — human arbitrator's final call, admin-token protected.
 // The ruling is stored first (reasoningHash = hashJson(ruling)) so it is verifiable via /deals/:id/verify.
-resolveRouter.post("/arbitrator/deals/:id/rule", requireAdminToken, async (req: Request, res: Response) => {
+resolveRouter.post("/arbitrator/deals/:id/rule", requireArbitrator, async (req: Request, res: Response) => {
   if (!ESCROW || !arbitrator) return void res.status(500).json({ error: { code: "ChainUnconfigured", message: "chain not configured yet" } });
   if (!DEAL_ID.test(String(req.params.id))) return void res.status(400).json({ error: { code: "BadRequest", message: "deal id must be a non-negative integer" } });
   const dealId = Number(req.params.id);
@@ -106,7 +102,8 @@ resolveRouter.post("/arbitrator/deals/:id/rule", requireAdminToken, async (req: 
       functionName: "arbitrate",
       args: [BigInt(dealId), bps, reasoningHash],
     });
-    res.json({ reasoningHash, txHash: hash });
+    const deal = await readOnchainDeal(dealId).catch(() => null);
+    res.json({ ...(deal ? toDealView(dealId, deal) : {}), reasoningHash, txHash: hash }); // frontend expects the updated Deal
   } catch (err: any) {
     sendChainError(res, err);
   }
@@ -114,7 +111,7 @@ resolveRouter.post("/arbitrator/deals/:id/rule", requireAdminToken, async (req: 
 
 // POST /deals/:id/timeout — calls claimTimeout(id). Anyone can call this on-chain;
 // we call it from the ORG wallet so the frontend doesn't need to pay gas for it.
-resolveRouter.post("/deals/:id/timeout", requireApiKey, async (req: Request, res: Response) => {
+resolveRouter.post("/deals/:id/timeout", requireApiKey, requireDealParty(["buyer", "seller"]), async (req: Request, res: Response) => {
   if (!ESCROW || !org) return void res.status(500).json({ error: { code: "ChainUnconfigured", message: "chain not configured yet" } });
   if (!DEAL_ID.test(String(req.params.id))) return void res.status(400).json({ error: { code: "BadRequest", message: "deal id must be a non-negative integer" } });
   const dealId = Number(req.params.id);
