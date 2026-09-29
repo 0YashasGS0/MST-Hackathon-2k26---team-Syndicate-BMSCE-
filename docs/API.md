@@ -51,6 +51,13 @@
 - SARAL is fail-closed. `SARAL_ENABLED` defaults to `false`; the route and connector return `SARAL not configured: awaiting mentor docs` until mentor docs arrive. No SARAL SDK calls, package names or proof formats are assumed. If those docs provide an EIP-1193 provider, it can use the injected-wallet flow; a session-proof flow needs a separately documented verifier.
 - `GET /deals/:id/payment` reads settlement amounts indexed by B1 from `Settled` events; both payout amount fields are formatted using 6 MockUSD decimals.
 
+## PG wallet and transaction module (frontend handoff)
+- Import `discoverWallets()` and `createInjectedWalletConnector(provider)` from `backend/src/auth/wallet-connector.ts`. Discovery listens for EIP-6963 announcements, lists MetaMask and BridgeKey only when they announce a standard EIP-1193 provider, and falls back to `window.ethereum` when no supported announcement is available. The BridgeKey extension was not available for a live check in this checkout.
+- Call `connector.connect()` to request accounts and ensure chain `91562037` (`0x5752035`). If the chain is unknown, the connector adds MST Testnet using tMSTC, the documented MST RPC, and explorer. A code `4001` rejection becomes a user-readable error. Subscribe with `onAccountsChanged`; use `bindWalletSession(connector, { onLoginRequired })` to POST `/auth/logout` and prompt SIWE login again after an account change. Subscribe to `onChainChanged` to disable actions until the wallet returns to MST Testnet; `getWalletClient()` also enforces this check before each action.
+- After login call `getTestGasStatus(publicClient, address)`. When balance is below `0.05` tMSTC, display its `message` (“Getting you test gas…”) while B1 runs the PG gas-drip hook after KYC approval. Show its `faucetUrl` (`https://faucet.mstblockchain.com/`) as a fallback.
+- Use `sendPgContractAction({ connector, publicClient, contractAddress, abi, action, args })` from `backend/src/auth/transaction-helper.ts` for `proposeDeal`, `acceptDeal`, `release`, `raiseDispute`, `acceptResolution`, `escalate`, and `fund`. It waits for a successful receipt and returns `{ txHash, explorerUrl }`; reverted receipts throw an error. The explorer link is `https://testnet.mstscan.com/tx/<hash>`.
+- SARAL remains dropped from the hackathon flow. Keep `SARAL_ENABLED=false`; its connector remains a fail-closed placeholder pending official docs.
+
 ## Shapes
 ```ts
 type User = { address: string; handle?: string; kycLevel: 0 | 1 | 2 };

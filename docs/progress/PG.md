@@ -19,6 +19,9 @@
 
 ## Interface changes
 <!-- Any change to endpoints, JSON shapes, ABI, shared/ files. Also update docs/API.md. -->
+- FE handoff: `discoverWallets()` + `createInjectedWalletConnector(provider)` in `backend/src/auth/wallet-connector.ts`; use EIP-6963 first, MetaMask primary, BridgeKey only when it announces EIP-1193, then `window.ethereum` fallback. `connect()` checks/adds/switches to chain `0x5752035`. Bind `accountsChanged` with `bindWalletSession(connector, { onLoginRequired })` to clear `/auth/logout` and prompt a fresh SIWE login; `chainChanged` should disable actions off MST. `getTestGasStatus()` provides the low-gas message and faucet link. `sendPgContractAction()` in `backend/src/auth/transaction-helper.ts` handles `proposeDeal`, `acceptDeal`, `release`, `raiseDispute`, `acceptResolution`, `escalate`, and `fund`, waits for successful receipt, and returns `{ txHash, explorerUrl }`.
+- `docs/API.md`: added the wallet discovery, session event, low-gas UX, contract action helper, receipt, and explorer-link handoff. Auth endpoints and payloads did not change.
+- SARAL is dropped from the hackathon path but its connector remains fail-closed; leave `SARAL_ENABLED=false`.
 - `docs/API.md`: session response now specifies `upi: { payee, note }`; payment and payout amounts are specified as MockUSD base-unit strings, with formatted display fields; wallet auth now uses `/auth/nonce`, `/auth/verify`, and `/auth/logout` with a signed session cookie; SARAL remains fail-closed.
 
 ## Log
@@ -30,6 +33,13 @@
 - **Tested:** how it was verified (curl, test, explorer tx link)
 - **Next:** what comes next for this role
 -->
+
+### 2026-09-29 — PG wallet connection and transaction handoff
+- **What:** Added EIP-6963 discovery for MetaMask and an EIP-1193 BridgeKey provider, legacy injected fallback, MST chain switch/add configuration, user rejection messaging, account-change logout/re-login binding, off-chain action blocking, low-test-gas UX status, and a viem contract-call helper for the requested escrow actions. SARAL remains fail-closed. Documented the FE interface.
+- **Files:** `backend/src/auth/wallet-connector.ts`, `backend/src/auth/transaction-helper.ts`, `backend/test/wallet-connector.test.ts`, `backend/test/transaction-helper.test.ts`, `docs/API.md`, `docs/progress/PG.md`
+- **How to use:** See the “PG wallet and transaction module” section in `docs/API.md`. FE calls the connector's `connect()`, logs in using existing `/auth/nonce` and `/auth/verify`, binds account changes to session logout/re-login, checks test gas after login, and calls `sendPgContractAction()` for the listed escrow methods.
+- **Tested:** Added mocked tests for MetaMask/BridgeKey announcements, 4902 chain add parameters, 4001 rejection, account-change logout and relogin, chain gating, transaction receipt/link and reverted receipt. Not executed: Node.js/npm and runnable backend test setup are unavailable in this checkout. BridgeKey live behavior: not tried; no browser or wallet UI is available here (mocked EIP-1193 announcement test only).
+- **Next:** FE consumes the documented PG module; B1 mounts the PG auth/payment routers and calls the gas drip after KYC. Run tests/typecheck when the backend runtime/test setup is available, then verify BridgeKey in a browser with the wallet installed.
 
 ### 2026-09-29 — PG test coverage and B1 integration check
 - **What:** Added unit cases for five repeated payment confirmations, retrying failed funding without a second mint, rejecting deals that are not `Accepted`, gas-drip threshold behavior, one-time send, and terminal failed attempts. Checked the latest local `origin/nikil-dev` snapshot: it is Node/Express/TypeScript, so the earlier Flask/Node mismatch is not present there. The remaining integration mismatch is directory layout: B1's app/package are under `backend/backend/`, but this branch's PG source/tests are under `backend/`.
