@@ -1,5 +1,4 @@
 import { Router } from "express";
-import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { keccak256 } from "viem";
@@ -8,7 +7,9 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { db } from "../db.js";
 import { pub, escrowAbi, ESCROW } from "../chain.js";
-import { requireApiKey, getCaller } from "../auth.js";
+import { requireApiKey } from "../auth.js";
+import { requireDealParty } from "../dealAccess.js";
+import { requireAdminToken, safeUpload } from "../security.js";
 import { sowStore } from "../sowStore.js";
 
 export const dealsRouter = Router();
@@ -17,7 +18,7 @@ const DEAL_STATUS = ["Created", "Funded", "Delivered", "Disputed", "Resolved"];
 
 const UPLOAD_DIR = path.join(__dirname, "..", "..", "data", "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-const upload = multer({ dest: UPLOAD_DIR });
+const upload = safeUpload(UPLOAD_DIR); // size/count/type limits, random file names
 
 function serializeDeal(deal: any) {
   const out: Record<string, any> = {};
@@ -79,11 +80,11 @@ dealsRouter.get("/deals/:id", requireApiKey, async (req, res) => {
 });
 
 // POST /deals/:id/delivery -- save file, return keccak256 hash for seller to sign markDelivered(id, hash)
-dealsRouter.post("/deals/:id/delivery", requireApiKey, upload.array("files"), (req, res) => {
-  const caller = getCaller(req);
+// Seller only (checked on-chain) BEFORE anything is written to disk.
+dealsRouter.post("/deals/:id/delivery", requireApiKey, requireDealParty(["seller"]), upload.array("files"), (req, res) => {
   const dealId = Number(req.params.id);
   const files = (req.files as Express.Multer.File[]) || [];
-  const note = req.body.note || "";
+  const note = req.body?.note || ""; // Express 5: no body → req.body is undefined
   
   if (files.length === 0 && !note) return res.status(400).json({ error: { code: "BAD_REQUEST", message: "files or note required" } });
   
@@ -98,11 +99,11 @@ dealsRouter.post("/deals/:id/delivery", requireApiKey, upload.array("files"), (r
 });
 
 // POST /deals/:id/evidence -- same idea, for dispute evidence -> raiseDispute(id, hash)
-dealsRouter.post("/deals/:id/evidence", requireApiKey, upload.array("files"), (req, res) => {
-  const caller = getCaller(req);
+// Either party (the buyer disputes; the seller may answer), checked on-chain before the upload.
+dealsRouter.post("/deals/:id/evidence", requireApiKey, requireDealParty(["buyer", "seller"]), upload.array("files"), (req, res) => {
   const dealId = Number(req.params.id);
   const files = (req.files as Express.Multer.File[]) || [];
-  const complaint = req.body.complaint || req.body.note || "";
+  const complaint = req.body?.complaint || req.body?.note || "";
   
   if (files.length === 0 && !complaint) return res.status(400).json({ error: { code: "BAD_REQUEST", message: "files or complaint required" } });
 
@@ -117,7 +118,7 @@ dealsRouter.post("/deals/:id/evidence", requireApiKey, upload.array("files"), (r
 });
 
 // GET /arbitrator/cases
-dealsRouter.get("/arbitrator/cases", requireApiKey, (req, res) => {
+dealsRouter.get("/arbitrator/cases", requireAdminToken, (req, res) => {
   // Return deals that are Escalated (or Disputed for demo)
   const deals = db.prepare("SELECT * FROM deals WHERE status = 'Disputed' OR status = 'Escalated' ORDER BY id DESC").all();
   res.json({ deals: deals.map((d: any) => ({ ...d, status: d.status })) });

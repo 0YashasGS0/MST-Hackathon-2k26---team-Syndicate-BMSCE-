@@ -1,0 +1,61 @@
+# Production-style stack: Caddy (HTTPS) → frontend (Next.js) + backend (Express + SQLite on a volume).
+#   1. cp backend/.env.example backend/.env   and fill it (NODE_ENV=production, secrets, CORS_ORIGINS=https://$APP_DOMAIN,
+#      AUTH_DOMAIN=$APP_DOMAIN, TRUST_PROXY=1)
+#   2. export APP_DOMAIN=app.example.com API_DOMAIN=api.example.com NEXT_PUBLIC_API_KEY=<same as BACKEND_API_KEY>
+#   3. docker compose up -d --build
+# See docs/DEPLOY.md.
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: backend/.env
+    environment:
+      NODE_ENV: production
+      DB_PATH: /app/backend/data/app.db
+    volumes:
+      - backend-data:/app/backend/data
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  frontend:
+    build:
+      context: frontend
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?set API_DOMAIN}
+        NEXT_PUBLIC_API_KEY: ${NEXT_PUBLIC_API_KEY:-}
+        NEXT_PUBLIC_ESCROW_ADDRESS: ${NEXT_PUBLIC_ESCROW_ADDRESS:-}
+        NEXT_PUBLIC_USD_ADDRESS: ${NEXT_PUBLIC_USD_ADDRESS:-}
+        NEXT_PUBLIC_LIVE_ENDPOINTS: ${NEXT_PUBLIC_LIVE_ENDPOINTS:-*}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [backend, frontend]
+    restart: unless-stopped
+
+volumes:
+  backend-data:
+  caddy-data:
+  caddy-config:

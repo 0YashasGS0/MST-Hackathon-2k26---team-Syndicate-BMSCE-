@@ -1,0 +1,16 @@
+**/node_modules
+**/.next
+**/.env
+**/.env.*
+!**/.env.example
+**/data
+**/*.sqlite
+**/*.db
+**/*.log
+.git
+.claude
+contracts/out
+contracts/cache
+contracts/broadcast
+contracts/lib
+docs/*.pdf
