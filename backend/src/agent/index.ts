@@ -2,7 +2,7 @@
 import { createLlmChain } from "./createLlmClient";
 import { scoreDispute as scoreDisputeCore, type DisputeInput, type Ruling, type ScorerDeps } from "./scoreDispute";
 
-export { DisputeScoringError, type DisputeInput, type Reasoning, type Ruling, type ScorerDeps } from "./scoreDispute";
+export { DemoFallbackError, DisputeScoringError, type DisputeInput, type Reasoning, type Ruling, type ScorerDeps } from "./scoreDispute";
 export { LlmUnavailableError } from "./toolRetry";
 export { createLlmChain, createLlmClient } from "./createLlmClient";
 
