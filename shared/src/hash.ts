@@ -2,7 +2,7 @@
 // Buyer (proposeDeal) and seller (acceptDeal) must commit this exact bytes32.
 import canonicalize from "canonicalize";
 import { keccak256, toBytes, type Hex } from "viem";
-import { parseSow, type Sow } from "./sow";
+import { parseSow, type Sow } from "./sow.js";
 
 /** Generic RFC 8785 canonical JSON → keccak256 (e.g. reasoningHash). No schema, no normalization. */
 export function hashJson(obj: unknown): Hex {

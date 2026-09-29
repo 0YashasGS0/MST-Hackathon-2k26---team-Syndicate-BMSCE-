@@ -39,6 +39,7 @@
 - **Next:** what comes next for this role
 -->
 
+<<<<<<< HEAD
 ### 2026-09-29 — Chandana FE integration review
 - **What:** Reviewed the latest available `origin/chandana` snapshot (`149e136`) against PG's documented auth, payment, and wallet-transaction interfaces. Found the FE live auth still targets phone/OTP and undocumented SARAL device endpoints; the on-ramp confirmation type expects a `Deal` instead of PG's response; delivery/release/resolution actions still mutate through HTTP; and the crypto option presents PG's display-only confirmation as wallet payment. Recorded exact FE and B2 handoffs without editing their owned paths.
 - **Files:** `docs/progress/PG.md`
@@ -52,6 +53,12 @@
 - **How to use:** B1 injects PG's `getCaller` into B2's routers and shares the SQLite connection with `SowStore`; FE imports B2's SOW/hash/split/verify exports from `@kernel-exploits/shared`. Keep PG's wallet modules in the shared-package handoff request until they are actually exported.
 - **Tested:** Branch and interface source review only; no code or tests changed.
 - **Next:** B2 reconciles the shared API documentation and confirms the wallet-module export plan; B1 mounts the routers with PG auth.
+=======
+### 2026-09-29 — Merged yashas (B1 + B2) into geeth-dev; PG's real auth/payments replace B1's placeholders (done by B2's agent at the repo owner's request)
+- **What:** merged `origin/yashas` (which already contains `nikil-dev`). Conflicts only in `backend/src/auth.ts` and `backend/src/payments/b1-integration.ts` → PG's real files (B1's placeholders had the same exports). B1's `index.ts` already calls `createPgIntegration({ database, publicClient, orgClient, escrowAddress, usdAddress, escrowAbi, usdAbi, sendContractTx })` and mounts `authRouter` + `paymentsRouter`, and injects PG's `getCaller` into B2's routers. Two type-only fixes for the shared stack (Express 5, strict viem types): `mint.ts` passes `chain: orgClient.chain` to `writeContract`; `routes.ts` stringifies route params before `parseDealId`.
+- **Files:** merge commit; `backend/src/payments/{mint,routes}.ts`
+- **Tested:** backend `tsc --noEmit` 0 errors; 195/195 tests (PG 22 + B2 173). Booted the combined app with PG mounted (test ORG key, placeholder addresses): `POST /drafts` via PG's `getCaller` (dev header) → 201; `/onramp/1/session` → 503 `AuthNotConfigured` without `BACKEND_API_KEY` (as designed).
+>>>>>>> 54fa49fe0ef4a5771bc1620393a19d14237064b6
 
 ### 2026-09-29 — PG payment UX and merge-plan alignment
 - **What:** Added the mock UPI deep link to on-ramp sessions, accepted and stored the confirmation method as display-only payment metadata, included `markDelivered` in the transaction helper, and aligned the API/progress handoff with the team merge plan. Recorded B1, B2, and FE integration requests without editing their owned paths. SARAL stays fail-closed and out of the hackathon login flow.

@@ -1,1 +1,5 @@
 node_modules/
+# dist/ is intentionally TRACKED: backend and frontend import the built package (dist/*.js + *.d.ts) without
+# building it, and the browser verify page loads dist/split.wasm. Rebuild with `npm run build` (TS) and
+# `npm run build:wasm` (WASM) and commit the result. (The root .gitignore ignores dist/, so re-include it here.)
+!dist/

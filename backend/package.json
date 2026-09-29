@@ -1,0 +1,45 @@
+{
+  "name": "@kernel-exploits/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "seed": "tsx scripts/seed.ts",
+    "reset": "tsx scripts/reset.ts",
+    "smoke:merge": "tsx scripts/smoke-merge.ts",
+    "smoke:score": "tsx scripts/smoke-score.ts",
+    "models": "tsx scripts/list-models.ts",
+    "eval:disputes": "tsx scripts/eval-disputes.ts",
+    "seed:demo": "tsx scripts/seed-demo.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
+    "@google/genai": "^2.24.0",
+    "@kernel-exploits/shared": "file:../shared",
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "multer": "^2.0.2",
+    "openai": "^7.23.0",
+    "viem": "^2.56.9",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^26.6.3",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  },
+  "description": "Shared backend: B1 chain & data, B2 SOW agent, PG auth & payments (one Express app, one SQLite DB)"
+}

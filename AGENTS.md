@@ -13,7 +13,7 @@ The buyer and seller each give requirements → an AI agent merges them into a w
 
 New session? Read `docs/KICKSTART.md` first.
 
-Required reading, in order: `docs/MVP.md` (design) → `docs/TEAM_ROADMAP.md` (who does what, hour by hour) → `docs/API.md` (interfaces) → `docs/STATUS.md` (current state) → **all files in `docs/progress/`** (what teammates have done).
+Required reading, in order: `docs/MVP.md` (design) → `docs/TEAM_ROADMAP.md` (who does what, hour by hour) → `docs/API.md` (interfaces) → your own log in `docs/progress/`. Don't read other roles' logs during the build (see §5).
 
 ## 2. Team & ownership
 
@@ -29,10 +29,12 @@ Required reading, in order: `docs/MVP.md` (design) → `docs/TEAM_ROADMAP.md` (w
 ## 3. MST Blockchain facts
 
 - EVM-compatible L1 with Proof of Staked Authority consensus. Standard Solidity/viem/Foundry tooling works unchanged.
-- Testnet chain ID `91562037`, RPC `https://testnetrpc.mstblockchain.com`, WebSocket `wss://testnetrpc.mstblockchain.com`, gas token MSTC (18 decimals), ~3 s blocks.
+- Testnet chain ID `91562037`, RPC `https://testnetrpc.mstblockchain.com`, WebSocket `wss://testnetrpc.mstblockchain.com`, gas token tMSTC (18 decimals), ~3 s blocks.
+- Gas token: tMSTC on testnet, MSTC on mainnet (18 decimals)
 - Stablecoin: `MockUSD` (6 decimals). Could be swapped for MST's tMUSD later.
 - MST SDKs: **SARAL** (MPC keyless login) and **WASMify** (ZK-backed verifiable execution). **Neither is publicly documented. Never invent their APIs.** Use only what is in `docs/sdk/` or the mentor-provided docs. If those are missing, stop and ask your user.
 - Deployed addresses: **only** from `deployments.md`. Never hardcode an address from memory.
+- Official MST docs are in docs/sdk/ — read them before using any MST-specific tool.
 
 ## 4. Non-negotiable rules
 
@@ -48,9 +50,7 @@ Required reading, in order: `docs/MVP.md` (design) → `docs/TEAM_ROADMAP.md` (w
 ## 5. Session protocol (every agent, every session)
 
 **At start:**
-1. Tell your user to run `git pull --rebase origin main`, or run it yourself if you can.
-2. Read `docs/STATUS.md` and **every** file in `docs/progress/`.
-3. Check the "Requests to others" sections for anything addressed to your role, and tell your user about it.
+1. Work on your own branch only. Don't sync with main or read others' logs during the build; everyone merges into main once at the end. Build strictly against docs/API.md so branches integrate cleanly.
 
 **After finishing each task (before committing):**
 1. Add an entry at the **top** of your role's log in `docs/progress/` using the template in that file.
