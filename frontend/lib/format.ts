@@ -1,4 +1,5 @@
 import { formatUnits } from "viem";
+import { EXPLORER_URL } from "./chain";
 import { USD_DECIMALS } from "./contracts";
 import type { Deal, DealStatus } from "./types";
 
@@ -20,6 +21,9 @@ export const fmtDate = (unix: number) =>
 export const fmtDateTime = (unix: number) =>
   new Date(unix * 1000).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
 export const fmtMonth = (unix: number) => new Date(unix * 1000).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+
+/** MST explorer link for a transaction. */
+export const txUrl = (hash: string) => `${EXPLORER_URL}/tx/${hash}`;
 
 /** User-facing transaction ID derived from the on-chain deal id. */
 export const txnId = (dealId: string) => `SKS${dealId.padStart(9, "0")}`;

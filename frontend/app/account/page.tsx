@@ -50,11 +50,9 @@ export default function AccountPage() {
               Payments above ₹5,000 are paused until {fmtDateTime(cooling)}.
             </Item>
           )}
-          {user.wallet && (
-            <Item icon={<WalletIcon className="h-5 w-5" />} title="Crypto wallet linked">
-              Ending ····{user.wallet.slice(-4)}
-            </Item>
-          )}
+          <Item icon={<WalletIcon className="h-5 w-5" />} title="Signed in with your wallet">
+            Ending ····{user.address.slice(-4)}. Switching accounts in your wallet signs you out here.
+          </Item>
         </Card>
 
         <SectionTitle>Help</SectionTitle>
@@ -70,7 +68,7 @@ export default function AccountPage() {
         >
           Log out of this device
         </button>
-        <p className="mt-3 text-center text-xs text-muted">Logging back in on this device needs an OTP.</p>
+        <p className="mt-3 text-center text-xs text-muted">Logging back in on this device needs your wallet.</p>
       </Screen>
     </>
   );

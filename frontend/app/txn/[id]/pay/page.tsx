@@ -1,14 +1,14 @@
 "use client";
-// Checkout: UPI QR, UPI ID collect request, UPI app (phones), or a linked crypto wallet.
-// Every method ends in the same place: the money is locked in escrow until the payer approves the work.
+// Checkout: UPI QR, UPI ID collect request, UPI app (phones), or the signed-in crypto wallet.
+// PG's on-ramp: POST /onramp/:id/session gives the amount and `upiUri` (QR + deep link); POST /onramp/:id/confirm
+// with the chosen `method` mints MockUSD and funds the escrow. Every method ends with the money locked in escrow.
 import QRCode from "qrcode";
 import { useParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import type { Address, EIP1193Provider } from "viem";
 import { api } from "@/lib/api";
-import { fmtInr, txnId } from "@/lib/format";
-import type { OnrampSession, PayMethod } from "@/lib/types";
-import { useSession, useUser } from "@/components/session";
+import { fmtInr, txnId, txUrl } from "@/lib/format";
+import type { OnrampConfirm, OnrampSession, PayMethod } from "@/lib/types";
+import { useUser } from "@/components/session";
 import { useDeal } from "@/components/useDeal";
 import { CheckIcon, ChevronRight, ShieldIcon } from "@/components/icons";
 import {
@@ -21,12 +21,6 @@ import {
 } from "@/components/PayMarks";
 import { Avatar, BackBar, Button, ButtonLink, Card, cx, inputCls, Loading, Screen, SectionTitle } from "@/components/ui";
 
-declare global {
-  interface Window {
-    ethereum?: EIP1193Provider & { isMetaMask?: boolean };
-  }
-}
-
 const methodLabel: Record<PayMethod, string> = {
   upi_qr: "UPI (QR)",
   upi_id: "UPI ID",
@@ -36,11 +30,12 @@ const methodLabel: Record<PayMethod, string> = {
 
 export default function PayPage() {
   const { id } = useParams<{ id: string }>();
-  const { deal } = useDeal(id);
+  const { deal, reload } = useDeal(id);
   const [session, setSession] = useState<OnrampSession>();
   const [open, setOpen] = useState<PayMethod>("upi_qr");
   const [paying, setPaying] = useState(false);
   const [paidWith, setPaidWith] = useState<PayMethod>();
+  const [receipt, setReceipt] = useState<OnrampConfirm>();
   const [error, setError] = useState<string>();
   const [mobile, setMobile] = useState(false);
 
@@ -54,8 +49,9 @@ export default function PayPage() {
     setPaying(true);
     setError(undefined);
     try {
-      await api.onrampConfirm(id, method);
+      setReceipt(await api.onrampConfirm(id, method));
       setPaidWith(method);
+      reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -93,6 +89,11 @@ export default function PayPage() {
           <p className="mt-3 text-xs text-muted">
             Transaction ID · <span className="font-mono">{txnId(deal.id)}</span>
           </p>
+          {receipt?.fundTx && (
+            <a href={txUrl(receipt.fundTx)} target="_blank" rel="noreferrer" className="mt-2 block text-xs font-medium text-accent">
+              View escrow funding on MST explorer ↗
+            </a>
+          )}
         </Card>
         <ButtonLink size="lg" href="/home" className="mt-8 w-full max-w-sm">
           Done
@@ -133,7 +134,7 @@ export default function PayPage() {
     {
       key: "crypto",
       title: "Crypto wallet",
-      sub: "Pay in stablecoin from your linked wallet",
+      sub: "Pay in stablecoin from the wallet you signed in with",
       marks: <WalletMark />,
       body: <Crypto amount={fmtInr(deal.amount)} busy={paying} onPaid={() => confirm("crypto")} />,
     },
@@ -296,52 +297,17 @@ function UpiId({ busy, onPaid }: { busy: boolean; onPaid: () => void }) {
 
 function Crypto({ amount, busy, onPaid }: { amount: string; busy: boolean; onPaid: () => void }) {
   const user = useUser();
-  const { updateUser } = useSession();
-  const [linking, setLinking] = useState(false);
-  const [error, setError] = useState<string>();
-  const hasProvider = typeof window !== "undefined" && !!window.ethereum;
-
-  async function link() {
-    setLinking(true);
-    setError(undefined);
-    try {
-      const [addr] = (await window.ethereum!.request({ method: "eth_requestAccounts" })) as Address[];
-      updateUser(await api.linkWallet(user.phone, addr));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't link the wallet.");
-    } finally {
-      setLinking(false);
-    }
-  }
-
-  if (!user.wallet)
-    return (
-      <div className="text-center">
-        <p className="text-sm text-muted">Link a crypto wallet once to pay with stablecoins.</p>
-        {hasProvider ? (
-          <Button size="lg" variant="secondary" className="mt-4 w-full" disabled={linking} onClick={link}>
-            {linking ? "Waiting for wallet…" : window.ethereum?.isMetaMask ? "Link MetaMask" : "Link wallet"}
-          </Button>
-        ) : (
-          <p className="mt-3 rounded-2xl bg-surface-2 px-4 py-3 text-sm text-muted">
-            No wallet found in this browser. Install MetaMask to use this option.
-          </p>
-        )}
-        {error && <p className="mt-3 text-sm text-danger">{error}</p>}
-      </div>
-    );
-
   return (
     <div>
       <div className="flex items-center gap-3 rounded-2xl bg-surface-2 p-3">
         <WalletMark />
         <div className="flex-1">
-          <p className="text-sm font-semibold">Linked wallet</p>
-          <p className="text-xs text-muted">ending ····{user.wallet.slice(-4)}</p>
+          <p className="text-sm font-semibold">Your wallet</p>
+          <p className="text-xs text-muted">ending ····{user.address.slice(-4)}</p>
         </div>
         <CheckIcon className="h-5 w-5 text-success" />
       </div>
-      {/* TODO(FE): approve + fund(dealId) on DealEscrow from the linked wallet once the ABI lands. */}
+      {/* TODO(FE): approve + fund(dealId) via PG's sendPgContractAction once B2 exports it from shared/ and B1 deploys. */}
       <Button size="lg" className="mt-4 w-full" disabled={busy} onClick={onPaid}>
         {busy ? "Confirming in wallet…" : `Pay ${amount} from wallet`}
       </Button>

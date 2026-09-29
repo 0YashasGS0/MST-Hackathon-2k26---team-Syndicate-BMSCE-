@@ -1,12 +1,15 @@
 "use client";
 // Device-bound session, UPI style:
-// - sign in once per device with phone + OTP; a new device also needs the security PIN and removes the old one
+// - sign in once per device with a wallet (PG's nonce + signature login); a new device also needs the security
+//   PIN and removes the old one
+// - switching wallet account signs out (PG's bindWalletSession); leaving MST Testnet sets `onMst` to false
 // - the app locks with the PIN every time it's opened, and again after 2 minutes in the background
 // - the device checks every 15 s that it's still the registered one, and signs out if not
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
+import { forgetWallet, watchWallet } from "@/lib/wallet";
 import { LockScreen } from "./Pin";
 
 type Session = {
@@ -14,16 +17,18 @@ type Session = {
   user?: User;
   deviceId: string;
   notice?: string;
+  onMst: boolean; // the wallet is on MST Testnet (always true for the demo wallet)
   signIn: (u: User) => void;
   updateUser: (u: User) => void;
   signOut: (notice?: string) => void;
 };
 
-const USER_KEY = "fe.session.user";
+const USER_KEY = "fe.session.wallet-user"; // renamed when login moved from phone OTP to wallet, so old sessions are dropped
 const DEVICE_KEY = "fe.device.id";
 const UNLOCK_KEY = "fe.unlocked"; // sessionStorage: cleared when the tab/app is closed
 const RELOCK_AFTER_MS = 2 * 60_000;
 const TAKEN_OVER = "Your account was registered on another device, so you were signed out here.";
+const ACCOUNT_CHANGED = "Your wallet account changed. Sign in again to continue.";
 
 const store = (s: () => Storage) => ({
   get: (k: string) => {
@@ -57,6 +62,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [deviceId, setDeviceId] = useState("");
   const [notice, setNotice] = useState<string>();
   const [unlocked, setUnlocked] = useState(false);
+  const [onMst, setOnMst] = useState(true);
 
   useEffect(() => {
     let id = local.get(DEVICE_KEY);
@@ -71,12 +77,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     /* eslint-disable react-hooks/set-state-in-effect -- one-time restore from storage */
     setDeviceId(id);
     setUser(saved);
-    setUnlocked(!!saved && tab.get(UNLOCK_KEY) === saved.phone);
+    setUnlocked(!!saved && tab.get(UNLOCK_KEY) === saved.address);
     /* eslint-enable react-hooks/set-state-in-effect */
     if (!saved) return setReady(true);
     // Refresh the saved account from the server before routing, so stale copies can't send people to the
     // wrong screen (e.g. "set your PIN" when one is already set).
-    api.getMe(saved.phone).then(
+    api.getMe(saved.address).then(
       (fresh) => {
         if (fresh) {
           const merged = { ...saved, ...fresh, deviceId: id!, deviceKey: saved!.deviceKey };
@@ -95,13 +101,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const unlock = useCallback(() => {
     setUser((u) => {
-      if (u) tab.set(UNLOCK_KEY, u.phone);
+      if (u) tab.set(UNLOCK_KEY, u.address);
       return u;
     });
     setUnlocked(true);
   }, []);
 
   const signOut = useCallback((n?: string) => {
+    api.logout().catch(() => {}); // clears PG's session cookie
+    forgetWallet();
+    setOnMst(true);
     local.set(USER_KEY, null);
     tab.set(UNLOCK_KEY, null);
     setNotice(n);
@@ -115,7 +124,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!user || !deviceId) return;
     let hiddenAt = 0;
     const check = () =>
-      api.checkDevice(user.phone, deviceId).then(
+      api.checkDevice(user.address, deviceId).then(
         ({ valid }) => !valid && signOut(TAKEN_OVER),
         () => {}, // offline: keep the session
       );
@@ -138,10 +147,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, [user, deviceId, signOut]);
 
-  // A fresh login (OTP, plus PIN on a new device) counts as unlocking.
+  // Wallet: account switch → sign out; network switch → onMst.
+  const address = user?.address;
+  useEffect(() => {
+    if (!address) return;
+    let off = () => {};
+    let live = true;
+    watchWallet(address, { onLoginRequired: () => signOut(ACCOUNT_CHANGED), onChain: setOnMst }).then((o) =>
+      live ? (off = o) : o(),
+    );
+    return () => {
+      live = false;
+      off();
+    };
+  }, [address, signOut]);
+
+  // A fresh login (wallet signature, plus PIN on a new device) counts as unlocking.
   const signIn = useCallback((u: User) => {
     local.set(USER_KEY, JSON.stringify(u));
-    tab.set(UNLOCK_KEY, u.phone);
+    tab.set(UNLOCK_KEY, u.address);
     setNotice(undefined);
     setUnlocked(true);
     setUser(u);
@@ -153,7 +177,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ ready, user, deviceId, notice, signIn, updateUser, signOut, unlocked, unlock }}>
+    <Ctx.Provider value={{ ready, user, deviceId, notice, onMst, signIn, updateUser, signOut, unlocked, unlock }}>
       {children}
     </Ctx.Provider>
   );
@@ -185,7 +209,7 @@ function redirectFor(user: User | undefined, path: string): string | null {
 /** Routes people to login → KYC → PIN setup (first time only) → home, and locks the app behind the PIN. */
 export function AuthGate({ children }: { children: ReactNode }) {
   const ctx = useContext(Ctx)!;
-  const { ready, user, unlocked, unlock, signOut } = ctx;
+  const { ready, user, unlocked, unlock, signOut, onMst } = ctx;
   const path = usePathname();
   const router = useRouter();
   const target = ready ? redirectFor(user, path) : null;
@@ -201,13 +225,22 @@ export function AuthGate({ children }: { children: ReactNode }) {
         name={user.name ?? "Welcome back"}
         phone={user.phone}
         onUnlock={async (pin) => {
-          await api.verifyPin(user.phone, pin);
+          await api.verifyPin(user.address, pin);
           unlock();
         }}
         onForgot={() => signOut()}
       />
     );
-  return <>{children}</>;
+  return (
+    <>
+      {user && !onMst && (
+        <p role="alert" className="sticky top-0 z-50 bg-warning px-4 py-2 text-center text-sm font-medium text-white">
+          Your wallet is on another network. Switch it back to MST Testnet to sign or pay.
+        </p>
+      )}
+      {children}
+    </>
+  );
 }
 
 function Splash() {

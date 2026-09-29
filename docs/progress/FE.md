@@ -10,7 +10,9 @@
 
 ## Requests to others
 <!-- Format: - [ ] @B1/@B2/@PG/@FE: what you need — why (hh:mm) -->
-- none
+- [ ] @B2: export PG's `wallet-connector.ts` + `transaction-helper.ts` from `@kernel-exploits/shared` (with a build); FE vendors a copy in `frontend/lib/pg-wallet.ts` until then
+- [ ] @PG @B1: device binding + PIN endpoints FE calls (mock only today): `POST /auth/device/bind`, `/auth/new-device`, `/auth/pin`, `/auth/pin/verify`, `/auth/device`, `GET /users/me`, `GET /users/by-phone/:phone` — confirm the owner or keep the PIN client-side
+- [ ] @B1: `/kyc/submit` gets `address`, `name`, `phone`, `pan`, `file`; please store `phone` so people can be found by mobile number
 
 ## Interface changes
 <!-- Any change to endpoints, JSON shapes, ABI, shared/ files. Also update docs/API.md. -->
@@ -27,9 +29,24 @@
 -->
 
 ### 2026-09-29 — Merged geeth-dev (B1 + B2 + PG) into chandana; live client aligned with docs/API.md (done by B2's agent at the repo owner's request)
-- **What:** merged `origin/geeth-dev` (the whole backend chain). Conflicts: the branch's root `STATUS.md` (team status moved to `docs/STATUS.md`) → FE's decisions added to `docs/STATUS.md`, FE's log entries moved here; `docs/progress/FE.md` → the team template with FE's entries. `lib/api.ts` (live path only; mocks unchanged): draft calls use B2's `/drafts/*` (create, terms, sow, merge-sow, conflicts, approve-sow) instead of `/deals/*`; `createDraft` sends `{ initiator, counterparty (the contact's wallet address), purpose, price, terms }`; every request sends PG's session cookie (`credentials: "include"`) and `X-API-Key` from the optional `NEXT_PUBLIC_API_KEY` (public demo key, not a secret); errors read the backend's `{ error: { code, message } }`. Explorer default → `https://testnet.mstscan.com`. `package-lock.json` was out of sync with `package.json` (`npm ci` failed) → regenerated.
-- **Files:** `frontend/lib/{api,chain}.ts`, `frontend/app/pay/new/page.tsx`, `frontend/.env.example`, `frontend/package-lock.json`, `docs/STATUS.md`, `docs/progress/FE.md`
+- **What:** merged `origin/geeth-dev` (the whole backend chain). Conflicts: the branch's root `STATUS.md` (team status moved to `docs/STATUS.md`) → FE's decisions added to `docs/STATUS.md`, FE's log entries moved here; `docs/progress/FE.md` → the team template with FE's entries. Also merged FE's own `bf5a42c` (wallet sign-in; it already added `X-API-Key`, `credentials: "include"`, `{ error: { code, message } }` parsing and the official explorer — FE's versions kept). On top, `lib/api.ts` (live path only; mocks unchanged): draft calls use B2's `/drafts/*` (create, terms, sow, merge-sow, conflicts, approve-sow) instead of `/deals/*`, and `createDraft(me, d, counterparty?)` sends `{ initiator, counterparty (the looked-up contact's wallet address), purpose, price, terms }`. `package-lock.json` was out of sync with `package.json` (`npm ci` failed) → regenerated.
+- **Files:** `frontend/lib/api.ts`, `frontend/app/pay/new/page.tsx`, `frontend/package-lock.json`, `docs/STATUS.md`, `docs/progress/FE.md`
 - **Tested:** `npm ci` OK; `next build` OK (TypeScript + 19 static pages); `eslint .` clean.
+
+### 2026-09-29 — Wallet sign-in + PG payment interfaces
+- **Done:** login is now PG's wallet flow (`docs/API.md` on `geeth-dev`): connect (EIP-6963 MetaMask/BridgeKey, else `window.ethereum`) → switch/add MST Testnet → `GET /auth/nonce` → wallet signs `messageToSign` → `POST /auth/verify` (session cookie). Browsers without a wallet get a "demo wallet on this device" (burner key in localStorage, test only). The wallet address is the account; phone number moved into KYC (still used to find people and on QR codes). Device binding + security PIN kept: after sign-in, a registered-elsewhere account asks for the PIN. Wallet account switch → `POST /auth/logout` + sign out (PG's `bindWalletSession`); network switch off MST → warning banner. Payments use PG's shapes: session `{ …, status, upi: { payee, note }, upiUri }` (QR + UPI deep link from `upiUri`), confirm sends `{ method }` and gets `{ status, mintTx, fundTx }`; the paid screen links the funding tx on `https://testnet.mstscan.com`. Crypto pay uses the signed-in wallet (no separate "link wallet").
+- **Also:** `lib/api.ts` sends `X-API-Key` (`NEXT_PUBLIC_API_KEY`) and `credentials: "include"`, defaults to port 5000, reads `{ error: { code, message } }`. Mock backend (`lib/mocks.ts`) keyed by wallet address, same nonce/verify protocol (single-use nonce, signature check), `MOCK_ARBITRATORS` env for arbitrator wallets.
+- **Files:** `frontend/lib/{pg-wallet,wallet,api,types,mocks,device-key,format,chain}.ts`, `frontend/components/session.tsx`, `frontend/app/{page,kyc/page,setup-pin/page,pay/new/page,txn/[id]/pay/page,account/**}.tsx`, `frontend/.env.example`
+- **Tested:** `tsc`, `eslint`, `next build` pass. Playwright run against the mock backend: demo-wallet sign-in; MetaMask-style injected wallet (add chain → switch → `personal_sign`); KYC + PIN for both; draft → both sign → UPI QR pay → Funded with explorer link; repeat confirm returns the same receipt; bad `method` rejected; network-switch banner shows/clears; account switch signs out; nonce replay rejected; `MOCK_ARBITRATORS` wallet gets the arbitrator role. Not tried against the real backend (not merged/deployed yet).
+- **Next:** swap `lib/pg-wallet.ts` for the `@kernel-exploits/shared` export; wire `sendPgContractAction` for contract calls once B1 deploys.
+
+#### Requests to others
+- **B2:** export PG's `wallet-connector.ts` + `transaction-helper.ts` from `@kernel-exploits/shared` (with a build). FE vendors a copy in `frontend/lib/pg-wallet.ts` until then.
+- **PG / B1:** device binding + PIN endpoints FE calls (mock only today): `POST /auth/device/bind`, `/auth/new-device`, `/auth/pin`, `/auth/pin/verify`, `/auth/device`, `GET /users/me`, `GET /users/by-phone/:phone`. Confirm who owns them or whether the PIN stays client-side.
+- **B1:** `/kyc/submit` gets `address`, `name`, `phone`, `pan`, `file` in the form; please store `phone` so people can be found by mobile number.
+
+#### Interface changes
+- FE now consumes PG's auth (`/auth/nonce`, `/auth/verify`, `/auth/logout`) and on-ramp shapes as documented on `geeth-dev`; no change to `docs/API.md` from FE.
 
 <!-- Entries below were moved here from the branch's root STATUS.md and its first FE.md at the merge (team status lives in docs/STATUS.md). -->
 

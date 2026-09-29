@@ -27,11 +27,11 @@ export default function SetupPinPage() {
     }
     setBusy(true);
     try {
-      updateUser(await api.setPin(user.phone, deviceId, pin)); // AuthGate then moves on to /home
+      updateUser(await api.setPin(user.address, deviceId, pin)); // AuthGate then moves on to /home
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       // Already set on the server (e.g. set earlier or on another screen): sync and move on to the lock screen.
-      const fresh = await api.getMe(user.phone).catch(() => null);
+      const fresh = await api.getMe(user.address).catch(() => null);
       if (fresh?.hasPin) return updateUser({ ...user, ...fresh, deviceId });
       setError(msg);
       setFirst("");

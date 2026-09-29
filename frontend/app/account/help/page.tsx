@@ -91,7 +91,7 @@ export default function HelpPage() {
         <SectionTitle>Stay safe</SectionTitle>
         <Card>
           <ul className="space-y-2 text-sm text-muted">
-            <li>• Sakshi will never ask for your PIN or OTP.</li>
+            <li>• Sakshi will never ask for your PIN or your wallet&apos;s recovery phrase.</li>
             <li>• Always check the banking name before paying.</li>
             <li>• Never pay outside the app for work agreed here — your money is only protected inside Sakshi.</li>
           </ul>
