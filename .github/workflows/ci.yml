@@ -26,6 +26,12 @@ jobs:
           cache-dependency-path: |
             shared/package-lock.json
             backend/package-lock.json
+            contracts/package-lock.json
+      - name: contracts (compile)
+        working-directory: contracts
+        run: |
+          npm ci
+          npm run compile
       - name: shared
         working-directory: shared
         run: |
@@ -42,6 +48,7 @@ jobs:
         run: |
           (cd shared && npm audit --audit-level=high)
           (cd backend && npm audit --audit-level=high)
+          (cd contracts && npm audit --audit-level=high)
 
   frontend:
     runs-on: ubuntu-latest
