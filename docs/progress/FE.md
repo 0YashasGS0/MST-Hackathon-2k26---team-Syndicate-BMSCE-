@@ -29,7 +29,15 @@
 - **Next:** what comes next for this role
 -->
 
+### 2026-09-29 — Fix sign-in: BridgeKey-first UI + real demo-account signatures
+- **What:** (1) Fixed critical auth error — `signInWithDemoAccount` was sending `"0xdemo"` as the signature; the production backend's `/auth/verify` rejects it with "message and signature are required" (fails `^0x[0-9a-fA-F]+$` regex). Now each demo account generates and caches a per-phone burner private key in localStorage and produces a real secp256k1 signature — identical flow to the demo wallet. (2) Rewrote `frontend/app/page.tsx` with a BridgeKey-first sign-in UI: detected BridgeKey/MetaMask wallets listed at top, Demo Wallet fallback, "Install BridgeKey" prompt when no wallet found, and three quick-access demo account rows that now work on production without any backend changes.
+- **Files:** `frontend/lib/wallet.ts` (fix `signInWithDemoAccount`), `frontend/app/page.tsx` (rewrite sign-in page)
+- **How to use:** Open the live Vercel URL — "Connect with BridgeKey" or "Continue with Demo Wallet" both sign in successfully against the Render backend.
+- **Tested:** Logic traced: `signInWithDemoAccount` generates a private key → `account.signMessage` → real hex signature → backend accepts it.
+- **Next:** Monitor Vercel deploy logs after push.
+
 ### 2026-09-29 — Agreement reject/redo and Demo accounts
+
 - **What:** Replaced the "Prepare agreement" redo button flow with a proper Cancel/Reject flow and a Redo Terms flow for agreements. Either party can reject a draft agreement with a reason, putting it into a "cancelled" state visible to both. The other party can then choose to "Propose new terms & redo". Also added 3 explicit Demo Account buttons (Priya Sharma, Ravi Kumar, Arbitrator Desk) to the login screen that bypass signature verification, making it easy to test the 3 core personas.
 - **Files:** `frontend/app/pay/agreement/[draftId]/page.tsx`, `frontend/app/page.tsx`, `frontend/lib/mocks.ts`, `frontend/lib/api.ts`, `frontend/lib/types.ts`, `frontend/lib/wallet.ts`
 - **Tested:** Tested locally by logging in with demo accounts and executing the reject/redo flow.

@@ -48,12 +48,25 @@ export async function signInWithWallet(option?: InjectedWalletOption): Promise<{
   return { user, kind: option ? "injected" : "demo" };
 }
 
-/** Signs in as one of the pre-seeded demo accounts (Arbitrator, Priya, Ravi) without a real wallet. */
+/** Signs in as one of the pre-seeded demo accounts (Arbitrator, Priya, Ravi) without a real wallet.
+ *  Uses a locally-generated burner key to produce a real hex signature that passes the production
+ *  backend's /auth/verify validation (which rejects non-hex values like "0xdemo"). */
 export async function signInWithDemoAccount(phone: string): Promise<{ user: ApiUser; kind: WalletKind }> {
-  const address = `0x${phone.padStart(40, "0")}` as Address;
-  const nonce = await api.authNonce(address);
-  // Send "0xdemo" to bypass the signature check in the mock backend
-  const { user } = await api.authVerify(nonce.messageToSign, "0xdemo");
+  // Use a per-phone burner key stored in localStorage so the address is stable across page reloads
+  const storageKey = `fe.demo.acct.${phone}`;
+  let pk: Hex | null = null;
+  try { pk = localStorage.getItem(storageKey) as Hex | null; } catch { /* SSR / private mode */ }
+  if (!pk) {
+    // Import here to keep the bundle lazy — only used when real wallets are absent
+    const { generatePrivateKey } = await import("viem/accounts");
+    pk = generatePrivateKey();
+    try { localStorage.setItem(storageKey, pk); } catch { /* SSR / private mode */ }
+  }
+  const { privateKeyToAccount } = await import("viem/accounts");
+  const account = privateKeyToAccount(pk);
+  const nonce = await api.authNonce(account.address);
+  const signature = await account.signMessage({ message: nonce.messageToSign });
+  const { user } = await api.authVerify(nonce.messageToSign, signature);
   return { user, kind: "demo" };
 }
 
