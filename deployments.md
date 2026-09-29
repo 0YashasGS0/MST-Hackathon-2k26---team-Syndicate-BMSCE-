@@ -18,5 +18,4 @@
 
 ## Config
 - `reviewPeriod` used for demo deals: 120
-- Testnet explorer URL: https://testnetrpc.mstblockchain.com
-
+- Testnet explorer URL: https://testnet.mstscan.com (official, Blockscout-based; see `docs/sdk/README.md`)

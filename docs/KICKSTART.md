@@ -44,13 +44,13 @@ An **AI-mediated escrow payment gateway on MST Blockchain**, built by Team Kerne
 - **Backend:** Node, Express, TypeScript, SQLite, viem
 - **Frontend:** Next.js, Tailwind, viem
 - **Shared code** (`shared/`): `src/sow.ts` (SOW schema), `src/hash.ts` (`hashSow`: RFC 8785 canonical JSON → keccak256), and later `split.ts` / `split.wasm` (the split formula)
-- **AI:** an LLM API called only from the backend, with tool-forced JSON output, temperature 0, and a versioned prompt
+- **AI:** an ordered provider chain (`LLM_CHAIN`): Groq and OpenRouter via the official `openai` SDK (OpenAI-compatible APIs), Google Gemini via `@google/genai`, and Anthropic optional. Called only from the backend, with function-call-forced JSON output, temperature 0, zod validation plus one retry, per-model 429 cooldown with failover, and a versioned prompt (v3, frozen)
 
 ## MST facts
 
-- EVM-compatible Layer 1 using Proof of Staked Authority. Testnet chain ID `91562037`, RPC `https://testnetrpc.mstblockchain.com` (WebSocket `wss://…`), gas token MSTC, ~3-second blocks.
+- EVM-compatible Layer 1 using Proof of Staked Authority. Testnet chain ID `91562037`, RPC `https://testnetrpc.mstblockchain.com` (WebSocket `wss://…`), gas token tMSTC, ~3-second blocks. Explorer: `https://testnet.mstscan.com` (official). Official MST docs: `docs/sdk/`.
 - **MST services we use:**
-  - **Core:** the testnet, our contracts, MSTC gas, the RPC/WebSocket endpoints, the explorer, and the stablecoin (MockUSD, or tMUSD if we get access)
+  - **Core:** the testnet, our contracts, tMSTC gas, the RPC/WebSocket endpoints, the explorer, and the stablecoin (MockUSD, or tMUSD if we get access)
   - **Should:** SARAL (MPC keyless login)
   - **Stretch:** WASMify (verifiable execution of the split formula)
   - **Optional:** BridgeKey
@@ -88,15 +88,14 @@ An **AI-mediated escrow payment gateway on MST Blockchain**, built by Team Kerne
 
 ## First actions for any agent
 
-1. `git pull --rebase origin main`, then switch to your personal branch (never push to `main`)
+1. Work on your own branch only. Don't sync with main or read others' logs during the build; everyone merges into main once at the end. Build strictly against docs/API.md so branches integrate cleanly. (never push to `main`)
 2. Ask your user which role they are (B1, B2, PG or FE).
-3. Read `AGENTS.md` → `docs/STATUS.md` → all of `docs/progress/` → your section of `docs/TEAM_ROADMAP.md`.
-4. Report any requests addressed to your role, then continue from your next unfinished step.
+3. Read `AGENTS.md` → `docs/API.md` → your section of `docs/TEAM_ROADMAP.md` → your own `docs/progress/<role>.md`.
+4. Continue from your next unfinished step. After each task, update your own progress log.
 
 ## Open questions (waiting on MST mentors)
 
 - SARAL SDK access, and whether it supports gasless transactions
 - WASMify SDK access
-- A testnet faucet or MSTC for 5 wallets
-- The testnet explorer URL
+- A testnet faucet or tMSTC for 5 wallets
 - Minting access to tMUSD

@@ -28,7 +28,7 @@
 | Chain ID | `91562037` |
 | RPC (HTTP) | `https://testnetrpc.mstblockchain.com` |
 | RPC (WebSocket) | `wss://testnetrpc.mstblockchain.com` |
-| Gas token | MSTC (18 decimals) |
+| Gas token | tMSTC (18 decimals) |
 | Block time | ~3 s |
 
 **Every person, before writing feature code:**
@@ -38,7 +38,7 @@
 3. Copy `.env.example` → `.env` and fill in only what your role needs. **Never commit `.env`.**
 4. Read `docs/API.md` once B1 and B2 publish it (by 0:45). Build against those shapes only. If you need a change, announce it; don't silently change it.
 
-**The five system wallets** (B1 creates them, PG requests MSTC for them):
+**The five system wallets** (B1 creates them, PG requests tMSTC for them):
 
 | Wallet | Used by | Purpose |
 |---|---|---|
@@ -69,11 +69,11 @@ Get our contracts live on MST, and make the backend the reliable bridge between 
 
 ### How you use MST technology
 
-- **MST testnet + EVM:** you deploy `MockUSD` and `DealEscrow` with Foundry against the MST RPC. Because MST is EVM-compatible, `forge` needs nothing MST-specific except the RPC URL and a funded key. Deployment is a normal contract-creation transaction, paid in MSTC.
+- **MST testnet + EVM:** you deploy `MockUSD` and `DealEscrow` with Foundry against the MST RPC. Because MST is EVM-compatible, `forge` needs nothing MST-specific except the RPC URL and a funded key. Deployment is a normal contract-creation transaction, paid in tMSTC.
 - **MST explorer:** you verify the contracts so anyone can read the source and call `getDeal` from the browser. This is the first proof judges see.
 - **MST WebSocket RPC:** your event indexer subscribes to contract events (`DealProposed`, `DealFunded`, `DisputeRaised`, `Settled`, …) over `wss://`. MST's ~3-second blocks mean the UI updates almost live.
 - **MST fast finality:** after `waitForTransactionReceipt`, the state is settled within seconds. You can safely update the database right after the receipt.
-- **Gas (MSTC):** every system action (`setKyc`, `proposeResolution`, `arbitrate`) costs a small amount of MSTC. You keep the agent and arbitrator wallets funded, and you run the gas drip that gives new users enough MSTC to sign their own transactions.
+- **Gas (tMSTC):** every system action (`setKyc`, `proposeResolution`, `arbitrate`) costs a small amount of tMSTC. You keep the agent and arbitrator wallets funded, and you run the gas drip that gives new users enough tMSTC to sign their own transactions.
 
 ### Step-by-step
 
@@ -94,7 +94,7 @@ Get our contracts live on MST, and make the backend the reliable bridge between 
    export AGENT_ADDRESS=0x… ARBITRATOR_ADDRESS=0x…
    forge script script/Deploy.s.sol --rpc-url $MST_RPC_URL --private-key $ORG_KEY --broadcast
    ```
-4. Verify both contracts on the MST explorer (use its verification UI, or ask mentors for the testnet verifier URL).
+4. Verify both contracts on the MST testnet explorer, `https://testnet.mstscan.com` (Blockscout): `forge verify-contract --verifier blockscout --verifier-url <explorer API URL>`, typically `https://testnet.mstscan.com/api/`; confirm it on the explorer. See `docs/sdk/README.md`.
 5. Write `deployments.md`: addresses, deploy tx hashes, explorer links. Push to `main` and tell the team.
 6. With B2, write `docs/API.md`: every endpoint, plus the `Deal`, `SOW` and `DisputeScores` JSON shapes.
 
@@ -114,7 +114,7 @@ Get our contracts live on MST, and make the backend the reliable bridge between 
 
    export const mst = defineChain({
      id: 91562037, name: "MST Testnet",
-     nativeCurrency: { name: "MST", symbol: "MSTC", decimals: 18 },
+     nativeCurrency: { name: "MST", symbol: "tMSTC", decimals: 18 },
      rpcUrls: { default: { http: [process.env.MST_RPC_URL!], webSocket: [process.env.MST_WS_URL!] } },
    });
    export const pub = createPublicClient({ chain: mst, transport: webSocket(process.env.MST_WS_URL) });
@@ -260,14 +260,14 @@ Own every movement of value and every user wallet: fiat in (mock UPI) → stable
 - **Stablecoin on MST:** `MockUSD` (6 decimals, same format as MST's tMUSD) is the escrowed currency. The ORG wallet is its owner, so your on-ramp mints it after a confirmed fiat payment. If mentors grant tMUSD access, the escrow is redeployed with the tMUSD address and nothing else changes.
 - **`fundFor(dealId)` on the MST escrow:** the ORG never holds customer money beyond the moment of conversion. You mint → call `fundFor` → the contract pulls the tokens into escrow in the same flow. After that, only the contract's rules can move them.
 - **SARAL (MST's MPC keyless onboarding):** users log in with a mobile number or Google. SARAL splits the signing key using multi-party computation, with one share tied to the user's device. This satisfies the notebook requirement of logging in through an authenticated device, and the user never sees a seed phrase. You connect the SARAL signer to viem so FE's contract calls work the same way whether the user is on SARAL or MetaMask.
-- **MSTC gas:** SARAL wallets start with 0 MSTC. Your gas drip sends a small amount after KYC approval, or you use SARAL's sponsored transactions if they're supported (ask mentors).
+- **tMSTC gas:** SARAL wallets start with 0 tMSTC. Your gas drip sends a small amount after KYC approval, or you use SARAL's sponsored transactions if they're supported (ask mentors).
 - **BridgeKey (MST's multi-chain wallet)** and **tMUSD** are optional extras if time allows.
 
 ### Step-by-step
 
 **Hour 0–2 — Mint pipeline + SARAL standalone**
 
-1. Hour 0: ask the MST mentors for (a) testnet MSTC for all 5 wallets, (b) SARAL SDK and docs, (c) WASMify access for B2, (d) tMUSD minting access.
+1. Hour 0: ask the MST mentors for (a) testnet tMSTC for all 5 wallets, (b) SARAL SDK and docs, (c) WASMify access for B2, (d) tMUSD minting access.
 2. Once B1 deploys, confirm the ORG wallet has approved the escrow (`Deploy.s.sol` does `approve(escrow, max)`). Check with `readContract("allowance", [org, escrow])`.
 3. `backend/src/payments/mint.ts`: `org.writeContract({ address: USD, functionName: "mint", args: [orgAddress, amount] })`.
    - Amounts use 6 decimals: `parseUnits("100", 6)`.
@@ -297,7 +297,7 @@ Own every movement of value and every user wallet: fiat in (mock UPI) → stable
 2. Signer adapter for FE, depending on what you found in step 4 of hour 0–2:
    - **SDK gives an EIP-1193 provider:** `createWalletClient({ chain: mst, transport: custom(saralProvider), account: address })`. Done; FE uses it like MetaMask.
    - **SDK gives only `signTransaction`:** build the transaction with viem (`prepareTransactionRequest`), sign it through SARAL, then send it with `pub.sendRawTransaction`. Wrap this in a `sendContractTx(fn, args)` helper and give it to FE.
-3. `gasDrip(address)`: if the balance is below 0.05 MSTC, send 0.1 MSTC from the ORG wallet. Limit it to once per address in the database. B1 calls it after KYC approval.
+3. `gasDrip(address)`: if the balance is below 0.05 tMSTC, send 0.1 tMSTC from the ORG wallet. Limit it to once per address in the database. B1 calls it after KYC approval.
 4. **Checkpoint at hour 8.5:** if a SARAL user can't sign `acceptDeal` by then, MetaMask ships as the login. Keep whatever SARAL login screen works for the pitch, and be honest that it's partial.
 
 **Hour 9–10 — Optional extras**
@@ -426,8 +426,8 @@ Make the whole flow usable and make the blockchain *visible*. Every trust-releva
 ## 6. AI: the product agent and the AI tools we build with
 
 **The product's AI agent (B2 owns it; B1 calls it).**
-- **API key:** use an LLM API from the backend only. For example, the Anthropic API with `claude-sonnet-5` for SOW merge and dispute scoring. The key lives in the backend `.env` and must never reach the frontend, the repo or the chain.
-- **Structured output:** force JSON by giving the model a single tool whose input schema is the SOW (or `DisputeScores`) schema and setting `tool_choice` to that tool. Then validate the result with the same JSON Schema anyway; never trust the output blindly. Use `temperature: 0` so the same inputs give nearly the same output, and store `model` and `promptVersion` in every reasoning object so a ruling can be traced back to its exact prompt.
+- **Providers and API keys:** the LLM is called from the backend only. **`LLM_CHAIN`** is an ordered list of `provider:model` entries, e.g. `groq:<model>,gemini:gemini-2.5-flash`. Supported providers: **Groq** and **OpenRouter** (the official `openai` SDK against their OpenAI-compatible APIs, keys `GROQ_API_KEY` / `OPENROUTER_API_KEY`), **Google Gemini** (`@google/genai`, `GEMINI_API_KEY`) and **Anthropic** (optional, `ANTHROPIC_API_KEY`). Entries without a key are skipped. A 429 puts that entry on cooldown and the next one answers; the answering `provider:model` is recorded in `agent_calls` and in the ruling's `reasoningHash`. Without `LLM_CHAIN`, the older `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_MODEL` / `LLM_FALLBACK_MODELS` still work. Agent logic depends only on the `LlmClient` interface (`backend/src/agent/llm.ts`), and `createLlmChain()` builds the implementations. Keys live in the backend `.env` and must never reach the frontend, the repo or the chain.
+- **Structured output:** force JSON by declaring a single function/tool (`submit_sow` or `submit_scores`) whose parameters mirror the output schema. On Gemini, set `toolConfig.functionCallingConfig` to mode `ANY` with `allowedFunctionNames` set to that one function. On Groq/OpenRouter, set `tool_choice` to that function (or `"required"` if a model rejects the named form; only one tool is declared). Gemini, Groq and OpenRouter get a bounds-free schema (limits restated in descriptions). On Anthropic, set `tool_choice` to the tool, with the full schema. Always check that the call was actually made, then validate the result with zod anyway, retrying once with the errors; never trust the output blindly. Use `temperature: 0` where the model supports it (Gemini, Groq and OpenRouter do; current Claude models reject it), and store `model` and `promptVersion` in every reasoning object so a ruling can be traced back to its exact prompt.
 - **Prompt structure** (for both prompts):
   1. The role (neutral escrow mediator).
   2. The rules:

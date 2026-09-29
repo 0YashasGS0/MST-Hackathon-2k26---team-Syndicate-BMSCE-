@@ -37,7 +37,7 @@ kycRouter.post("/admin/kyc/:address/approve", requireApiKey, async (req, res) =>
     return res.status(500).json({ error: { code: "CHAIN_UNCONFIGURED", message: "chain not configured yet" } });
   }
   try {
-    const address = getAddress(req.params.address);
+    const address = getAddress(String(req.params.address));
     const { hash } = await sendContractTx(org, {
       address: ESCROW,
       abi: escrowAbi,

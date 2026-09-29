@@ -26,4 +26,5 @@
 |---|---|---|
 | pre | Software-only (no hardware kit) | Team |
 | pre | Dispute scores are integers 0–100; split computed only by shared formula | Team |
+| hour 7 | No WASMify SDK (docs/sdk/ has none) → browser verify fallback: `split.wasm` + `verifyRuling()` run client-side; no WASMify integration | B2 |
 | 09-28 | SOW hash = keccak256(RFC 8785 canonical JSON) via `shared/` `hashSow` (schema draft `sow/v1`, tests passing; see `docs/progress/B2.md`) | B2 |

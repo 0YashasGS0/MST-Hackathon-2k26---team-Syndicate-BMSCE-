@@ -1,22 +1,16 @@
-// PLACEHOLDER for B2's dispute agent (branch `yashas`); replaced wholesale by B2's real backend/src/agent/index.ts at merge.
-export class DisputeScoringError extends Error {
-  issues: string[] = [];
-}
-export class DemoFallbackError extends Error {}
-export class LlmUnavailableError extends Error {}
+// B1's entry point for the dispute agent. Composition root: fills the LLM client from env.
+import { createLlmChain } from "./createLlmClient";
+import { scoreDispute as scoreDisputeCore, type DisputeInput, type Ruling, type ScorerDeps } from "./scoreDispute";
 
-export type DisputeInput = {
-  dealId: number;
-  sow: unknown;
-  sowHash: string;
-  deliveryHash: string;
-  evidenceHash: string;
-  complaint: string;
-  deliveryNotes: string;
-  evidenceNotes: string;
-};
-export type Ruling = { scores: unknown[]; buyerBps: number; reasoningHash: `0x${string}`; model: string; promptVersion: string };
+export { DemoFallbackError, DisputeScoringError, type DisputeInput, type Reasoning, type Ruling, type ScorerDeps } from "./scoreDispute";
+export { LlmUnavailableError } from "./toolRetry";
+export { createLlmChain, createLlmClient } from "./createLlmClient";
 
-export async function scoreDispute(_input: DisputeInput, _deps: { store?: unknown } = {}): Promise<Ruling> {
-  throw new LlmUnavailableError("B2's dispute agent is not merged yet");
+let envClient: { llm: ReturnType<typeof createLlmChain> } | undefined;
+
+/** Scores a dispute. deps.llm defaults to createLlmChain() (LLM_PROVIDER / LLM_API_KEY / LLM_MODEL / LLM_FALLBACK_MODELS). */
+export function scoreDispute(input: DisputeInput, deps: ScorerDeps = {}): Promise<Ruling> {
+  const demo = deps.demoFallback ?? process.env.AGENT_DEMO_FALLBACK === "true";
+  if (!deps.llm && !demo) envClient ??= { llm: createLlmChain() };
+  return scoreDisputeCore(input, { ...deps, llm: deps.llm ?? envClient?.llm });
 }

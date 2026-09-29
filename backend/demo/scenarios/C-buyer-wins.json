@@ -1,0 +1,76 @@
+{
+  "id": "C",
+  "name": "buyer wins",
+  "description": "Delivery mostly missing: placeholder pages, empty menu, no reservation form.",
+  "sow": {
+    "version": "sow/v1",
+    "title": "Website for Bean There café",
+    "buyer": "0x1111111111111111111111111111111111111111",
+    "seller": "0x2222222222222222222222222222222222222222",
+    "token": "0x3333333333333333333333333333333333333333",
+    "amount": "120000000",
+    "deliveryDeadline": 1900000000,
+    "reviewWindowSecs": 172800,
+    "deliverables": [
+      {
+        "id": "D1",
+        "title": "Homepage",
+        "description": "Homepage with hero, address and hours.",
+        "acceptanceCriteria": [
+          "Shows a hero image, the café's address and opening hours",
+          "Renders correctly on mobile"
+        ],
+        "weightBps": 4000
+      },
+      {
+        "id": "D2",
+        "title": "Online menu",
+        "description": "Full drinks and food menu.",
+        "acceptanceCriteria": [
+          "All 15 drinks and 10 food items are listed",
+          "Every item shows its price"
+        ],
+        "weightBps": 4000
+      },
+      {
+        "id": "D3",
+        "title": "Reservation form",
+        "description": "Table reservation form.",
+        "acceptanceCriteria": [
+          "Submitting a reservation emails the café"
+        ],
+        "weightBps": 2000
+      }
+    ],
+    "exclusions": [
+      "Online payments",
+      "Photography"
+    ]
+  },
+  "deliveryNotes": "Seller: site delivered at the staging link. Remaining content can be added later by the client.",
+  "complaint": "Every page is a placeholder with lorem ipsum text. The menu page just says 'Coming soon'. There is no reservation form anywhere; the contact link goes to a 404.",
+  "evidenceNotes": "E1 home.png: stock placeholder image and lorem ipsum text; no address and no opening hours. The layout does resize on a phone. E2 menu.png: page shows only the heading 'Menu – coming soon'; no items. E3 contact-404.png: the only form link returns 404; no reservation form found on any page.",
+  "groundTruth": {
+    "D1": [
+      {
+        "verdict": "not_met"
+      },
+      {
+        "verdict": "met"
+      }
+    ],
+    "D2": [
+      {
+        "verdict": "not_met"
+      },
+      {
+        "verdict": "not_met"
+      }
+    ],
+    "D3": [
+      {
+        "verdict": "not_met"
+      }
+    ]
+  }
+}
