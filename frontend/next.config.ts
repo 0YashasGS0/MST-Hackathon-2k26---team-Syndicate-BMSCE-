@@ -55,6 +55,13 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  async rewrites() {
+    const liveApi = process.env.NEXT_PUBLIC_LIVE_API_URL;
+    if (liveApi) {
+      return [{ source: "/proxy/:path*", destination: `${liveApi}/:path*` }];
+    }
+    return [];
+  },
 };
 
 export default nextConfig;
