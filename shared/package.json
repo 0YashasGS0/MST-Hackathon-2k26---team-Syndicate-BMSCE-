@@ -1,0 +1,40 @@
+{
+  "name": "@kernel-exploits/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./split.wasm": "./dist/split.wasm",
+    "./dist/split.wasm": "./dist/split.wasm",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/",
+    "dist/split.wasm"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build:wasm": "asc wasm/split.ts --outFile dist/split.wasm --optimize --runtime stub --use abort= --noAssert"
+  },
+  "dependencies": {
+    "canonicalize": "^5.1.0",
+    "viem": "^2.56.9",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "assemblyscript": "^0.28.20",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

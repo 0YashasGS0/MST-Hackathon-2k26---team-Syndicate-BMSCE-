@@ -22,6 +22,9 @@ import type {
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
 const LIVE = new Set((process.env.NEXT_PUBLIC_LIVE_ENDPOINTS ?? "").split(",").map((s) => s.trim()));
 const isLive = (key: string) => LIVE.has("*") || LIVE.has(key);
+// Demo app-level key that B1/PG routes check in X-API-Key. It ships to the browser, so it is NOT a secret: identity
+// comes from PG's HttpOnly session cookie (sent with credentials: "include"), never from this key.
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 
 export class ApiError extends Error {
   constructor(
@@ -33,16 +36,19 @@ export class ApiError extends Error {
 }
 
 async function http<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const init: RequestInit = { method, headers: {} };
+  const headers: Record<string, string> = API_KEY ? { "X-API-Key": API_KEY } : {};
+  const init: RequestInit = { method, headers, credentials: "include" }; // PG's session cookie
   if (body instanceof FormData) init.body = body;
   else if (body !== undefined) {
-    init.headers = { "content-type": "application/json" };
+    headers["content-type"] = "application/json";
     init.body = JSON.stringify(body);
   }
   const res = await fetch(`${API_URL}${path}`, init);
   if (!res.ok) {
+    // Backend errors are { error: { code, message } }; older/mock shapes are { error: string } or { message }.
     const err = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, err.error ?? err.message ?? res.statusText);
+    const msg = typeof err.error === "object" && err.error ? err.error.message : (err.error ?? err.message);
+    throw new ApiError(res.status, msg ?? res.statusText);
   }
   return res.json() as Promise<T>;
 }
@@ -94,17 +100,27 @@ export const api = {
   listPeople: (address: Address) => call<Contact[]>("listPeople", () => http("GET", `/people?address=${address}`), address),
 
   // ---- negotiation / agreement (B2) ----
-  createDraft: (mePhone: string, d: NewDraft) => call<Draft>("createDraft", () => http("POST", "/deals", d), mePhone, d),
+  // Live: B2's POST /drafts takes the counterparty's wallet address (resolved from the looked-up contact).
+  createDraft: (mePhone: string, d: NewDraft, counterparty?: Address) =>
+    call<Draft>(
+      "createDraft",
+      () => {
+        if (!counterparty) return Promise.reject(new ApiError(400, "Couldn't find this person's wallet. Try again."));
+        return http("POST", "/drafts", { initiator: d.role, counterparty, purpose: d.purpose, price: d.price, terms: d.terms });
+      },
+      mePhone,
+      d,
+    ),
   listDrafts: (address: Address) => call<Draft[]>("listDrafts", () => http("GET", `/drafts?address=${address}`), address),
   getDraft: (draftId: string) => call<Draft>("getDraft", () => http("GET", `/drafts/${draftId}`), draftId),
   addTerms: (draftId: string, party: Party, terms: string) =>
-    call<Draft>("addTerms", () => http("POST", `/deals/${draftId}/terms`, { party, terms }), draftId, party, terms),
-  getSow: (draftId: string) => call<SowVersion | null>("getSow", () => http("GET", `/deals/${draftId}/sow`), draftId),
-  mergeSow: (draftId: string) => call<SowVersion>("mergeSow", () => http("POST", `/deals/${draftId}/merge-sow`), draftId),
+    call<Draft>("addTerms", () => http("POST", `/drafts/${draftId}/terms`, { party, terms }), draftId, party, terms),
+  getSow: (draftId: string) => call<SowVersion | null>("getSow", () => http("GET", `/drafts/${draftId}/sow`), draftId),
+  mergeSow: (draftId: string) => call<SowVersion>("mergeSow", () => http("POST", `/drafts/${draftId}/merge-sow`), draftId),
   proposeConflict: (draftId: string, party: Party, field: Conflict["field"], value: number) =>
     call<SowVersion>(
       "proposeConflict",
-      () => http("POST", `/deals/${draftId}/conflicts`, { party, field, value }),
+      () => http("POST", `/drafts/${draftId}/conflicts`, { party, field, value }),
       draftId,
       party,
       field,
@@ -113,7 +129,7 @@ export const api = {
   signSow: (draftId: string, party: Party, version: number, signature: Hex, pin: string) =>
     call<SowVersion>(
       "signSow",
-      () => http("POST", `/deals/${draftId}/approve-sow`, { party, version, signature, pin }),
+      () => http("POST", `/drafts/${draftId}/approve-sow`, { party, version, signature, pin }),
       draftId,
       party,
       version,

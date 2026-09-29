@@ -78,7 +78,7 @@ function NewPayment() {
         purpose: String(f.get("purpose")),
         price: parseUnits((Number(amount) / INR_PER_USD).toFixed(USD_DECIMALS), USD_DECIMALS).toString(),
         terms: String(f.get("terms")),
-      });
+      }, contact?.address);
       router.push(`/pay/agreement/${draft.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
