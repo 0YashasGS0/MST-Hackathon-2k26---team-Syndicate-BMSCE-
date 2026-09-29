@@ -4,11 +4,12 @@
 
 | Contract | Address | Deploy tx | Block | Explorer | Verified |
 |---|---|---|---|---|---|
-| MockUSD | 0x528707b3cd2266c07744b680b5c9dc08a9886472 | 0x371bedf54c9960fe5fe3975f1db8814bb283c091d5409633cffb49c5dcada84c | 5800981 | [Explorer](https://testnet.mstscan.com/address/0x528707b3cd2266c07744b680b5c9dc08a9886472) | ✅ |
-| DealEscrow | 0x653aa806b4b00d13446aeba96a6be60a68b1aefa | 0x9bed6edfceff6949fcd22142ea5c2c18c125169d103136cb7911e1356c24c170 | 5800981 | [Explorer](https://testnet.mstscan.com/address/0x653aa806b4b00d13446aeba96a6be60a68b1aefa) | ✅ |
+| MockUSD | 0x528707B3CD2266c07744b680b5c9dc08a9886472 | [0x371bedf5…a84c](https://testnet.mstscan.com/tx/0x371bedf54c9960fe5fe3975f1db8814bb283c091d5409633cffb49c5dcada84c) | before 5800981 (see tx) | [MockUSD](https://testnet.mstscan.com/address/0x528707B3CD2266c07744b680b5c9dc08a9886472) | ⬜ |
+| DealEscrow | 0x653aA806b4b00d13446aEbA96A6bE60A68B1AefA | [0x9bed6edf…c170](https://testnet.mstscan.com/tx/0x9bed6edfceff6949fcd22142ea5c2c18c125169d103136cb7911e1356c24c170) | **5800981** (`DEPLOY_BLOCK`) | [DealEscrow](https://testnet.mstscan.com/address/0x653aA806b4b00d13446aEbA96A6bE60A68B1AefA) | ⬜ |
 
-
-
+> Deployed by B1 with ORG as owner; agent and arbitrator are the wallets below. On-chain checks at deploy passed (owner,
+> agent, arbitrator, stablecoin, decimals, ORG→escrow allowance). "Verified" = source verified on the explorer (not yet).
+> Redeploy: `cd contracts && npm ci && node deploy.js --write`; re-check any time with `cd backend && npm run preflight`.
 
 ## System wallets (addresses only)
 | Role | Address |

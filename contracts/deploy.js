@@ -1,190 +1,217 @@
-const { createWalletClient, createPublicClient, http, publicActions, parseAbiItem, keccak256 } = require('viem');
-const { privateKeyToAccount, privateKeyToAddress } = require('viem/accounts');
-const fs = require('fs');
-const { execSync } = require('child_process');
-const path = require('path');
-const readline = require('readline/promises');
+// Deploys MockUSD + DealEscrow to MST Testnet without Foundry. Same result as script/Deploy.s.sol:
+//   1. MockUSD()                                  owner = ORG (the deployer)
+//   2. DealEscrow(usd, agent, arbitrator)         owner = ORG
+//   3. usd.approve(escrow, max) from ORG          so the on-ramp's fundFor() can pull minted stablecoins
+// then reads every value back from the chain and prints what to put in deployments.md and the env files.
+//
+//   cd contracts && npm ci
+//   node deploy.js --compile-only    # compile only, no keys or network needed
+//   node deploy.js --write-abi       # also refresh backend/abi/*.json from the sources (CI checks they match)
+//   node deploy.js --write           # deploy (asks for confirmation) and fill the contract rows in deployments.md
+//
+// Keys: ORG_KEY from the environment or backend/.env (never printed). Agent/arbitrator: AGENT_ADDRESS /
+// ARBITRATOR_ADDRESS, else derived from AGENT_KEY / ARBITRATOR_KEY. RPC: MST_RPC_URL (default MST testnet).
+// Flags: --yes (skip the prompt), --any-chain (allow a chain other than MST testnet, e.g. a local node).
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+const readline = require("readline");
+const solc = require("solc");
+const { createPublicClient, createWalletClient, defineChain, getAddress, http, maxUint256 } = require("viem");
+const { privateKeyToAccount } = require("viem/accounts");
+
+const MST_TESTNET_ID = 91562037;
+const DEFAULT_RPC = "https://testnetrpc.mstblockchain.com";
+const EXPLORER = "https://testnet.mstscan.com";
+const SOURCES = ["MockUSD.sol", "DealEscrow.sol"];
+
+const args = new Set(process.argv.slice(2));
+
+// ---------- compile (same settings as foundry.toml: solc 0.8.24, optimizer 200 runs) ----------
+
+function findImport(importPath) {
+  for (const base of [path.join(__dirname, "node_modules"), path.join(__dirname, "lib/openzeppelin-contracts")]) {
+    const rel = base.endsWith("openzeppelin-contracts") ? importPath.replace(/^@openzeppelin\//, "") : importPath;
+    const file = path.join(base, rel);
+    if (fs.existsSync(file)) return { contents: fs.readFileSync(file, "utf8") };
+  }
+  return { error: `not found: ${importPath} (run npm ci in contracts/)` };
+}
 
 function compile() {
-  console.log("Compiling contracts with solc...");
-  try {
-    execSync('npx solc --abi --bin --base-path . --include-path node_modules/ -o build src/DealEscrow.sol src/MockUSD.sol', { stdio: 'inherit' });
-  } catch (e) {
-    console.error("Compilation failed:", e.message);
-    process.exit(1);
+  const input = {
+    language: "Solidity",
+    sources: Object.fromEntries(
+      SOURCES.map((f) => [`src/${f}`, { content: fs.readFileSync(path.join(__dirname, "src", f), "utf8") }]),
+    ),
+    settings: {
+      optimizer: { enabled: true, runs: 200 },
+      outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },
+    },
+  };
+  const out = JSON.parse(solc.compile(JSON.stringify(input), { import: findImport }));
+  const errors = (out.errors || []).filter((e) => e.severity === "error");
+  if (errors.length) {
+    for (const e of errors) console.error(e.formattedMessage);
+    throw new Error("compilation failed");
   }
+  const get = (file, name) => {
+    const c = out.contracts[`src/${file}`][name];
+    return { abi: c.abi, bytecode: `0x${c.evm.bytecode.object}` };
+  };
+  return { usd: get("MockUSD.sol", "MockUSD"), escrow: get("DealEscrow.sol", "DealEscrow") };
 }
+
+// ---------- env (process env wins; backend/.env is parsed, never printed) ----------
 
 function loadEnv() {
-  const envPath = path.join(__dirname, '..', 'backend', '.env');
-  if (!fs.existsSync(envPath)) throw new Error("backend/.env not found");
-  const envStr = fs.readFileSync(envPath, 'utf8');
   const env = {};
-  for (const line of envStr.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const idx = trimmed.indexOf('=');
-    if (idx === -1) continue;
-    env[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
+  const file = path.join(__dirname, "..", "backend", ".env");
+  if (fs.existsSync(file)) {
+    for (const raw of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#")) continue;
+      const eq = line.indexOf("=");
+      if (eq < 1) continue;
+      let value = line.slice(eq + 1).trim();
+      if (/^(['"]).*\1$/.test(value)) value = value.slice(1, -1);
+      env[line.slice(0, eq).trim()] = value;
+    }
   }
-  return env;
+  return { ...env, ...process.env };
 }
+
+function requireKey(env, name) {
+  const v = env[name];
+  if (!v || !/^0x[0-9a-fA-F]{64}$/.test(v)) throw new Error(`${name} is missing or not a 0x-prefixed 32-byte key`);
+  return v;
+}
+
+function roleAddress(env, addrVar, keyVar) {
+  if (env[addrVar] && env[addrVar] !== "0x") return getAddress(env[addrVar]);
+  return privateKeyToAccount(requireKey(env, keyVar)).address;
+}
+
+function confirm(question) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => rl.question(question, (a) => (rl.close(), resolve(/^y(es)?$/i.test(a.trim())))));
+}
+
+// ---------- deploy ----------
 
 async function main() {
-  const mode = process.argv[2];
-
-  if (mode !== '--compile-only' && mode !== '--write' && mode !== '--write-abi') {
-    console.error("Usage: node deploy.js [--compile-only | --write | --write-abi]");
-    process.exit(1);
-  }
-
-  compile();
-
-  const escrowAbi = JSON.parse(fs.readFileSync('build/src_DealEscrow_sol_DealEscrow.abi', 'utf8'));
-  const escrowBin = '0x' + fs.readFileSync('build/src_DealEscrow_sol_DealEscrow.bin', 'utf8');
-  const usdAbi = JSON.parse(fs.readFileSync('build/src_MockUSD_sol_MockUSD.abi', 'utf8'));
-  const usdBin = '0x' + fs.readFileSync('build/src_MockUSD_sol_MockUSD.bin', 'utf8');
-
-  const constructor = escrowAbi.find(a => a.type === 'constructor');
-  if (mode === '--compile-only') {
-    if (constructor && constructor.inputs.length === 3) {
-      console.log(`OK. DealEscrow constructor: (${constructor.inputs.map(i => i.type).join(', ')})`);
-      process.exit(0);
-    } else {
-      console.error("DealEscrow constructor args do not match expectations!");
-      process.exit(1);
+  console.log("Compiling MockUSD + DealEscrow (solc", solc.version().split("+")[0] + ")…");
+  const art = compile();
+  const ctor = art.escrow.abi.find((x) => x.type === "constructor");
+  console.log(`OK. DealEscrow constructor: (${ctor.inputs.map((i) => `${i.type} ${i.name}`).join(", ")})`);
+  if (args.has("--write-abi")) {
+    for (const [name, a] of [["DealEscrow", art.escrow], ["MockUSD", art.usd]]) {
+      fs.writeFileSync(path.join(__dirname, "..", "backend", "abi", `${name}.json`), JSON.stringify(a.abi, null, 2) + "\n");
     }
+    console.log("Wrote backend/abi/DealEscrow.json and MockUSD.json");
   }
+  if (args.has("--compile-only") || args.has("--write-abi")) return;
 
-  if (mode === '--write-abi') {
-    fs.writeFileSync('../backend/abi/DealEscrow.json', JSON.stringify(escrowAbi, null, 2));
-    fs.writeFileSync('../backend/abi/MockUSD.json', JSON.stringify(usdAbi, null, 2));
-    console.log("ABI rewritten to backend/abi/");
-    process.exit(0);
-  }
-
-  // --write mode
   const env = loadEnv();
-  const orgKey = env.ORG_KEY;
-  const agentKey = env.AGENT_KEY;
-  const arbKey = env.ARBITRATOR_KEY;
-
-  if (!orgKey || !agentKey || !arbKey) {
-    console.error("Missing ORG_KEY, AGENT_KEY, or ARBITRATOR_KEY in backend/.env");
-    process.exit(1);
+  const rpc = env.MST_RPC_URL || DEFAULT_RPC;
+  const org = privateKeyToAccount(requireKey(env, "ORG_KEY"));
+  const agent = roleAddress(env, "AGENT_ADDRESS", "AGENT_KEY");
+  const arbitrator = roleAddress(env, "ARBITRATOR_ADDRESS", "ARBITRATOR_KEY");
+  if (new Set([org.address, agent, arbitrator]).size !== 3) {
+    throw new Error("ORG, agent and arbitrator must be three different wallets");
   }
 
-  const account = privateKeyToAccount(orgKey);
-  const agentAddr = privateKeyToAddress(agentKey);
-  const arbAddr = privateKeyToAddress(arbKey);
-
-  console.log(`Deploying with these roles?`);
-  console.log(`ORG (owner/deployer): ${account.address}`);
-  console.log(`Agent: ${agentAddr}`);
-  console.log(`Arbitrator: ${arbAddr}`);
-
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await rl.question('Deploy? (y/N) ');
-  rl.close();
-  if (answer.toLowerCase() !== 'y') {
-    console.log("Aborted.");
-    process.exit(0);
+  const probe = createPublicClient({ transport: http(rpc) });
+  const chainId = await probe.getChainId();
+  if (chainId !== MST_TESTNET_ID && !args.has("--any-chain")) {
+    throw new Error(`RPC ${rpc} is chain ${chainId}, expected MST testnet ${MST_TESTNET_ID} (use --any-chain to override)`);
   }
-
-  const rpcUrl = env.MST_RPC_URL || "https://testnetrpc.mstblockchain.com";
-  const client = createWalletClient({ account, transport: http(rpcUrl) }).extend(publicActions);
-
-  const balance = await client.getBalance({ address: account.address });
-  if (balance === 0n) {
-    console.error("ERROR: ORG has no tMSTC!");
-    process.exit(1);
-  }
-
-  console.log("Deploying MockUSD...");
-  const usdHash = await client.deployContract({ abi: usdAbi, bytecode: usdBin, args: [] });
-  const usdReceipt = await client.waitForTransactionReceipt({ hash: usdHash });
-  const usdAddress = usdReceipt.contractAddress;
-  console.log(`MockUSD: ${usdAddress}`);
-
-  console.log("Deploying DealEscrow...");
-  const escrowHash = await client.deployContract({
-    abi: escrowAbi,
-    bytecode: escrowBin,
-    args: [usdAddress, agentAddr, arbAddr]
+  const chain = defineChain({
+    id: chainId,
+    name: chainId === MST_TESTNET_ID ? "MST Testnet" : `chain ${chainId}`,
+    nativeCurrency: { name: "tMSTC", symbol: "tMSTC", decimals: 18 },
+    rpcUrls: { default: { http: [rpc] } },
   });
-  const escrowReceipt = await client.waitForTransactionReceipt({ hash: escrowHash });
-  const escrowAddress = escrowReceipt.contractAddress;
-  const deployBlock = escrowReceipt.blockNumber;
-  console.log(`DealEscrow: ${escrowAddress}`);
+  const pub = createPublicClient({ chain, transport: http(rpc) });
+  const wallet = createWalletClient({ account: org, chain, transport: http(rpc) });
 
-  console.log("Approving Escrow for MockUSD fundFor...");
-  const maxUint256 = 115792089237316195423570985008687907853269984665640564039457584007913129639935n;
-  const approveHash = await client.writeContract({
-    address: usdAddress,
-    abi: usdAbi,
-    functionName: 'approve',
-    args: [escrowAddress, maxUint256]
-  });
-  await client.waitForTransactionReceipt({ hash: approveHash });
+  const balance = await pub.getBalance({ address: org.address });
+  console.log(`\nChain      ${chainId} (${rpc})`);
+  console.log(`ORG/owner  ${org.address}  balance ${Number(balance) / 1e18} tMSTC`);
+  console.log(`Agent      ${agent}`);
+  console.log(`Arbitrator ${arbitrator}`);
+  if (balance === 0n) throw new Error("the ORG wallet has 0 gas; fund it from the faucet first");
+  if (!args.has("--yes") && !(await confirm("\nDeploy with these roles? [y/N] "))) return console.log("Aborted.");
 
-  console.log("Running 7 on-chain checks...");
-  const pub = createPublicClient({ transport: http(rpcUrl) });
-  
-  const ownerEscrow = await pub.readContract({ address: escrowAddress, abi: escrowAbi, functionName: 'owner' });
-  const agentRole = await pub.readContract({ address: escrowAddress, abi: escrowAbi, functionName: 'agent' });
-  const arbRole = await pub.readContract({ address: escrowAddress, abi: escrowAbi, functionName: 'arbitrator' });
-  const stable = await pub.readContract({ address: escrowAddress, abi: escrowAbi, functionName: 'stablecoin' });
-  
-  const ownerUsd = await pub.readContract({ address: usdAddress, abi: usdAbi, functionName: 'owner' });
-  const decimals = await pub.readContract({ address: usdAddress, abi: usdAbi, functionName: 'decimals' });
-  const allowance = await pub.readContract({ address: usdAddress, abi: usdAbi, functionName: 'allowance', args: [account.address, escrowAddress] });
-
-  let checksFailed = false;
-  const check = (name, cond) => {
-    if (cond) {
-      console.log(`CHECK ${name}: ok`);
-    } else {
-      console.log(`CHECK ${name}: FAIL`);
-      checksFailed = true;
-    }
+  const send = async (label, hashPromise) => {
+    const hash = await hashPromise;
+    const receipt = await pub.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error(`${label} reverted: ${hash}`);
+    console.log(`${label.padEnd(22)} tx ${hash}  block ${receipt.blockNumber}`);
+    return receipt;
   };
 
-  check("DealEscrow.owner() == ORG", ownerEscrow.toLowerCase() === account.address.toLowerCase());
-  check("DealEscrow.agent() == Agent", agentRole.toLowerCase() === agentAddr.toLowerCase());
-  check("DealEscrow.arbitrator() == Arbitrator", arbRole.toLowerCase() === arbAddr.toLowerCase());
-  check("DealEscrow.stablecoin() == MockUSD", stable.toLowerCase() === usdAddress.toLowerCase());
-  check("MockUSD.owner() == ORG", ownerUsd.toLowerCase() === account.address.toLowerCase());
-  check("MockUSD.decimals() == 6", Number(decimals) === 6);
-  check("MockUSD.allowance(ORG, DealEscrow) == max", allowance === maxUint256);
+  const usdR = await send("MockUSD deploy", wallet.deployContract({ ...art.usd, args: [] }));
+  const usd = getAddress(usdR.contractAddress);
+  const escrowR = await send(
+    "DealEscrow deploy",
+    wallet.deployContract({ ...art.escrow, args: [usd, agent, arbitrator] }),
+  );
+  const escrow = getAddress(escrowR.contractAddress);
+  await send(
+    "approve(escrow, max)",
+    wallet.writeContract({ address: usd, abi: art.usd.abi, functionName: "approve", args: [escrow, maxUint256] }),
+  );
 
-  if (checksFailed) {
-    console.error("Some checks failed!");
-    process.exit(1);
+  // Read everything back so a wrong deploy is caught here, not in the demo.
+  const read = (address, abi, functionName, a = []) => pub.readContract({ address, abi, functionName, args: a });
+  const checks = [
+    ["DealEscrow.owner", getAddress(await read(escrow, art.escrow.abi, "owner")), org.address],
+    ["DealEscrow.agent", getAddress(await read(escrow, art.escrow.abi, "agent")), agent],
+    ["DealEscrow.arbitrator", getAddress(await read(escrow, art.escrow.abi, "arbitrator")), arbitrator],
+    ["DealEscrow.stablecoin", getAddress(await read(escrow, art.escrow.abi, "stablecoin")), usd],
+    ["MockUSD.owner", getAddress(await read(usd, art.usd.abi, "owner")), org.address],
+    ["MockUSD.decimals", Number(await read(usd, art.usd.abi, "decimals")), 6],
+    ["allowance(ORG, escrow)", await read(usd, art.usd.abi, "allowance", [org.address, escrow]), maxUint256],
+  ];
+  let ok = true;
+  console.log("\nChecks:");
+  for (const [name, got, want] of checks) {
+    const pass = got === want;
+    ok &&= pass;
+    console.log(`  ${pass ? "ok  " : "FAIL"} ${name}${pass ? "" : ` = ${got}, expected ${want}`}`);
   }
 
-  console.log("Checks passed! Updating deployments.md...");
-  const depPath = path.join(__dirname, '..', 'deployments.md');
-  let depStr = fs.readFileSync(depPath, 'utf8');
-  depStr = depStr.replace(/\| MockUSD \|.*\|/, `| MockUSD | ${usdAddress} | ${usdHash} | ${deployBlock} | [Explorer](https://testnet.mstscan.com/address/${usdAddress}) | ✅ |`);
-  depStr = depStr.replace(/\| DealEscrow \|.*\|/, `| DealEscrow | ${escrowAddress} | ${escrowHash} | ${deployBlock} | [Explorer](https://testnet.mstscan.com/address/${escrowAddress}) | ✅ |`);
-  // Delete placeholders note
-  depStr = depStr.replace(/> The previous values here were placeholders[\s\S]*?tx hash and block\./, '');
-  fs.writeFileSync(depPath, depStr);
-
+  const rows = {
+    MockUSD: `| MockUSD | ${usd} | ${usdR.transactionHash} | ${usdR.blockNumber} | ${EXPLORER}/address/${usd} | ⬜ |`,
+    DealEscrow: `| DealEscrow | ${escrow} | ${escrowR.transactionHash} | ${escrowR.blockNumber} | ${EXPLORER}/address/${escrow} | ⬜ |`,
+  };
+  if (args.has("--write") && ok && chainId === MST_TESTNET_ID) {
+    const file = path.join(__dirname, "..", "deployments.md");
+    let md = fs.readFileSync(file, "utf8");
+    for (const [name, row] of Object.entries(rows)) md = md.replace(new RegExp(`^\\| ${name} \\|.*$`, "m"), row);
+    md = md.replace(/^> The previous values here were placeholders:.*\n/m, "");
+    fs.writeFileSync(file, md);
+    console.log("\nUpdated deployments.md (commit it).");
+  }
   console.log(`
-OUTPUT VALUES TO SET:
-------------------------------------------
+deployments.md:
+${rows.MockUSD}
+${rows.DealEscrow}
+
 backend/.env:
-ESCROW_ADDRESS=${escrowAddress}
-USD_ADDRESS=${usdAddress}
-DEPLOY_BLOCK=${deployBlock}
+ESCROW_ADDRESS=${escrow}
+USD_ADDRESS=${usd}
+DEPLOY_BLOCK=${escrowR.blockNumber}
 
-frontend/.env.local (and build env):
-NEXT_PUBLIC_ESCROW_ADDRESS=${escrowAddress}
-NEXT_PUBLIC_USD_ADDRESS=${usdAddress}
-------------------------------------------
-`);
-
+frontend (.env.local / build env):
+NEXT_PUBLIC_ESCROW_ADDRESS=${escrow}
+NEXT_PUBLIC_USD_ADDRESS=${usd}`);
+  if (!ok) throw new Error("post-deploy checks failed (see above)");
 }
 
-main().catch(console.error);
+main().catch((e) => {
+  console.error(`\nERROR: ${e.shortMessage || e.message}`);
+  process.exit(1);
+});
