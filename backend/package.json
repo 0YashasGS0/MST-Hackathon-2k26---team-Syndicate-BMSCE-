@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"No tests specified\" && exit 0",
+    "start": "node dist/index.js",
+    "seed": "tsx scripts/seed.ts",
+    "reset": "tsx scripts/reset.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",
@@ -14,7 +18,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "multer": "^1.4.5-lts.1",
-    "viem": "^2.21.19"
+    "viem": "^2.56.9"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
@@ -24,5 +28,6 @@
     "@types/node": "^22.7.4",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2"
-  }
+  },
+  "type": "module"
 }

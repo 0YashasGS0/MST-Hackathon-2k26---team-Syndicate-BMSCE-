@@ -8,8 +8,8 @@ import {
   defineChain,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import escrowAbiJson from "../abi/DealEscrow.json";
-import usdAbiJson from "../abi/MockUSD.json";
+import escrowAbiJson from "../abi/DealEscrow.json" with { type: "json" };
+import usdAbiJson from "../abi/MockUSD.json" with { type: "json" };
 
 export const escrowAbi = escrowAbiJson as any;
 export const usdAbi = usdAbiJson as any;

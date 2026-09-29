@@ -3,8 +3,8 @@
 // chain_events (idempotent via the (tx_hash, log_index) primary key), update
 // deals.status, and on startup backfill with getContractEvents from DEPLOY_BLOCK
 // so a restart never loses history.
-import { pub, escrowAbi, ESCROW } from "./chain";
-import { db } from "./db";
+import { pub, escrowAbi, ESCROW } from "./chain.js";
+import { db } from "./db.js";
 
 const insertEvent = db.prepare(`
   INSERT OR IGNORE INTO chain_events (tx_hash, log_index, deal_id, name, args_json, block)
@@ -16,6 +16,19 @@ const upsertDealStatus = db.prepare(`
   VALUES (?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET status = excluded.status
 `);
+
+// Fills PG's payouts table from Settled events, per TEAM_ROADMAP.md §3 "Hour 4-6 step 1".
+const upsertPayout = db.prepare(`
+  INSERT INTO payouts (deal_id, to_buyer, to_seller, final_status, tx_hash)
+  VALUES (?, ?, ?, ?, ?)
+  ON CONFLICT(deal_id) DO UPDATE SET to_buyer = excluded.to_buyer, to_seller = excluded.to_seller,
+    final_status = excluded.final_status, tx_hash = excluded.tx_hash
+`);
+
+const FINAL_STATUS_NAMES = [
+  "None", "Proposed", "Accepted", "Funded", "Delivered", "Disputed",
+  "ResolutionProposed", "Escalated", "Released", "Refunded", "Resolved", "Cancelled",
+];
 
 function stringifyArgs(args: Record<string, any>) {
   const safe: Record<string, any> = {};
@@ -44,6 +57,16 @@ function storeLog(log: any) {
       log.eventName
     );
   }
+  if (dealId !== null && log.eventName === "Settled") {
+    const finalStatus = FINAL_STATUS_NAMES[Number(log.args?.finalStatus)] ?? String(log.args?.finalStatus);
+    upsertPayout.run(
+      dealId,
+      log.args?.toBuyer?.toString() ?? "0",
+      log.args?.toSeller?.toString() ?? "0",
+      finalStatus,
+      log.transactionHash
+    );
+  }
 }
 
 export async function startIndexer() {
@@ -68,7 +91,7 @@ export async function startIndexer() {
   pub.watchContractEvent({
     address: ESCROW,
     abi: escrowAbi,
-    onLogs: (logs) => logs.forEach(storeLog),
-    onError: (err) => console.error("[indexer] watch error:", err),
+    onLogs: (logs: any) => logs.forEach(storeLog),
+    onError: (err: any) => console.error("[indexer] watch error:", err),
   });
 }

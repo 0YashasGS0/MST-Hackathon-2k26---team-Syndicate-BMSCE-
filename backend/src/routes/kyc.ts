@@ -3,9 +3,13 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { getAddress } from "viem";
-import { db } from "../db";
-import { org, escrowAbi, ESCROW, sendContractTx } from "../chain";
-import { requireApiKey } from "../auth";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { db } from "../db.js";
+import { org, escrowAbi, ESCROW, sendContractTx } from "../chain.js";
+import { requireApiKey } from "../auth.js";
+import { gasDripAddress } from "../pg.js";
 
 export const kycRouter = Router();
 
@@ -24,13 +28,13 @@ kycRouter.post("/kyc/submit", requireApiKey, upload.single("file"), (req, res) =
      ON CONFLICT(address) DO UPDATE SET kyc_level = MAX(kyc_level, 1)`
   ).run(address.toLowerCase());
 
-  res.json({ address, kyc_level: 1, status: "pending" });
+  res.json({ address, kycLevel: 1, status: "pending" });
 });
 
 // POST /admin/kyc/:address/approve -- setKyc(address, true) from ORG wallet, then gasDrip
 kycRouter.post("/admin/kyc/:address/approve", requireApiKey, async (req, res) => {
   if (!ESCROW || !org) {
-    return res.status(500).json({ error: "chain not configured yet" });
+    return res.status(500).json({ error: { code: "CHAIN_UNCONFIGURED", message: "chain not configured yet" } });
   }
   try {
     const address = getAddress(req.params.address);
@@ -46,10 +50,10 @@ kycRouter.post("/admin/kyc/:address/approve", requireApiKey, async (req, res) =>
        ON CONFLICT(address) DO UPDATE SET kyc_level = 2`
     ).run(address.toLowerCase());
 
-    // NOTE: hook up PG's gasDrip(address) here once that endpoint exists.
+    await gasDripAddress(address);
 
-    res.json({ address, kyc_level: 2, tx_hash: hash });
+    res.json({ address, kycLevel: 2, txHash: hash });
   } catch (err: any) {
-    res.status(500).json({ error: "kyc approval failed", detail: err.message });
+    res.status(500).json({ error: { code: "APPROVAL_FAILED", message: err.message } });
   }
 });
