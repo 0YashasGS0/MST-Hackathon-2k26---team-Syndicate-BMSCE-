@@ -85,7 +85,11 @@ jobs:
           # production backend must refuse to start without a real config
           if docker run --rm kx-backend; then echo "backend started with an empty production config" && exit 1; fi
           # dev-mode backend and the frontend must serve
-          docker run -d --name be -e NODE_ENV=development -p 5000:5000 kx-backend
+          # dev mode with format-only addresses and an unreachable RPC: the smoke test must not depend on MST testnet
+          docker run -d --name be -p 5000:5000 -e NODE_ENV=development \
+            -e MST_RPC_URL=http://127.0.0.1:9 -e MST_WS_URL=ws://127.0.0.1:9 \
+            -e ESCROW_ADDRESS=0x000000000000000000000000000000000000dEaD -e USD_ADDRESS=0x000000000000000000000000000000000000bEEF \
+            kx-backend
           docker run -d --name fe -p 3000:3000 kx-frontend
           # /drafts answers 401 without the chain (unlike /health, which reads the MST RPC)
           for i in $(seq 30); do
