@@ -68,7 +68,7 @@ export default function Home() {
                   <span className="transition group-hover:scale-105 group-active:scale-95">
                     <Avatar name={p.name} size="md" />
                   </span>
-                  <span className="w-full truncate px-1 text-xs font-medium">{p.name.split(" ")[0]}</span>
+                  <span className="w-full truncate px-1 text-xs font-medium">{(p.name || "").split(" ")[0]}</span>
                 </Link>
               ))}
               {people.length > 7 && (
@@ -101,7 +101,7 @@ export default function Home() {
               const [label, cta] = !myTerms
                 ? ["Add your terms", "Add terms"]
                 : d.status === "awaiting_other"
-                  ? [`Waiting for ${other.split(" ")[0]}`, "View"]
+                  ? [`Waiting for ${(other || "").split(" ")[0]}`, "View"]
                   : ["Agreement to sign", "Review & sign"];
               return (
                 <Card key={d.id} flush>

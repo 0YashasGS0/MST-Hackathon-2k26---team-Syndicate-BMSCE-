@@ -62,7 +62,7 @@ const faqs: { group: string; items: [string, string][] }[] = [
       ],
       ["Why does the app ask for my PIN so often?", "To make sure it's really you whenever the app is opened and before any money moves."],
       ["I forgot my PIN. What do I do?", "Contact support from Help & support. We'll verify your identity with your KYC details before resetting it."],
-      ["Will Sakshi ever ask for my PIN or recovery phrase?", "Never. Don't share them with anyone, even if they say they're from Sakshi."],
+      ["Will Yescro ever ask for my PIN or recovery phrase?", "Never. Don't share them with anyone, even if they say they're from Yescro."],
     ],
   },
 ];

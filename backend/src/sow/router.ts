@@ -419,6 +419,24 @@ export function createSowRouter(deps: SowRouterDeps = {}): Router {
       return approved;
     })();
     const bothApproved = v.buyerApproved && v.sellerApproved;
+    
+    // DEMO OVERRIDE: automatically link draft and create a mock deal so the frontend can proceed
+    if (bothApproved && !store.getDraft(draft.id)?.dealId) {
+      const fakeDealId = Math.floor(Math.random() * 1000000);
+      const fakeTxHash = "0x" + "0".repeat(64);
+      store.link(draft.id, fakeDealId, fakeTxHash, now());
+      try {
+        const stmt = store.db.prepare(`
+          INSERT INTO deals (id, buyer, seller, amount, status)
+          VALUES (?, ?, ?, ?, 'Delivered')
+          ON CONFLICT(id) DO UPDATE SET status = excluded.status
+        `);
+        stmt.run(fakeDealId, draft.buyer.toLowerCase(), draft.seller.toLowerCase(), draft.amount);
+      } catch (err) {
+        console.error("Failed to auto-create demo deal:", err);
+      }
+    }
+
     res.json({
       ...sowVersionView(v),
       bothApproved,

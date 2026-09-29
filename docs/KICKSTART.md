@@ -5,7 +5,7 @@
 
 ## What we're building
 
-An **AI-mediated escrow payment gateway on MST Blockchain**, built by Team Kernel Exploits (4 people) at the MST X Newrro Hackathon 2k26 in a 12-hour build. Software only (we dropped the Newrro hardware kit). Project name: TBD (top candidate: *Sakshi*, "witness").
+An **AI-mediated escrow payment gateway on MST Blockchain**, built by Team Kernel Exploits (4 people) at the MST X Newrro Hackathon 2k26 in a 12-hour build. Software only (we dropped the Newrro hardware kit). Project name: **Yescro**. Tagline: *"Life is uncertain, payments need not be."*
 
 **The flow:**
 1. The user logs in (SARAL or MetaMask) and completes mock KYC.

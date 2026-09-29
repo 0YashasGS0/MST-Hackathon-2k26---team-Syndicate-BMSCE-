@@ -83,7 +83,7 @@ export default function PayPage() {
           <p className="flex gap-2 text-sm">
             <ShieldIcon className="h-5 w-5 shrink-0 text-accent" />
             <span>
-              Your money is <b>held safely</b>. {deal.sellerName.split(" ")[0]} gets it only after you confirm the work is done.
+              Your money is <b>held safely</b>. {(deal.sellerName || "").split(" ")[0]} gets it only after you confirm the work is done.
             </span>
           </p>
           <p className="mt-3 text-xs text-muted">

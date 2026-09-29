@@ -26,10 +26,10 @@ export const fmtMonth = (unix: number) => new Date(unix * 1000).toLocaleDateStri
 export const txUrl = (hash: string) => `${EXPLORER_URL}/tx/${hash}`;
 
 /** User-facing transaction ID derived from the on-chain deal id. */
-export const txnId = (dealId: string) => `SKS${dealId.padStart(9, "0")}`;
+export const txnId = (dealId: string) => `YSC${dealId.padStart(9, "0")}`;
 
 export const initials = (name: string) =>
-  name
+  (name || "")
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)

@@ -24,6 +24,10 @@ export default function AgreementPage() {
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
   const [askPin, setAskPin] = useState(false);
+  const [showCancel, setShowCancel] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [showRedo, setShowRedo] = useState(false);
+  const [redoText, setRedoText] = useState("");
 
   const load = useCallback(
     () =>
@@ -76,24 +80,125 @@ export default function AgreementPage() {
   const me: Party = draft.buyer.toLowerCase() === user.address.toLowerCase() ? "buyer" : "seller";
   const them: Party = me === "buyer" ? "seller" : "buyer";
   const other = me === "buyer" ? draft.sellerName : draft.buyerName;
-  const otherFirst = other.split(" ")[0];
+  const otherFirst = (other || "").split(" ")[0];
   const myTerms = me === "buyer" ? draft.buyerTerms : draft.sellerTerms;
   const theirTerms = me === "buyer" ? draft.sellerTerms : draft.buyerTerms;
   const mySig = sow?.signatures.find((s) => s.party === me);
-  const theirSig = sow?.signatures.find((s) => s.party === them);
   const locked = !!draft.dealId;
+  const isCancelled = draft.status === "cancelled";
+  const cancelledByMe = draft.cancelledBy === me;
 
   /** PIN confirms it's you; the device key produces the signature over the agreement's fingerprint. */
   async function sign(pin: string) {
     if (!sow) return;
-    // Refuse to sign if what we were sent doesn't hash to what we're asked to sign.
     if (sowHash(sow.sow) !== sow.sowHash) throw new Error("This agreement doesn't match its fingerprint. Not signing.");
     const signature = await signHash(sow.sowHash);
     await api.signSow(draftId, me, sow.version, signature, pin);
     setAskPin(false);
     const d = await api.getDraft(draftId);
-    if (d.dealId && me === "buyer") return router.push(`/txn/${d.dealId}/pay`);
+    if (d.dealId) return router.push(`/txn/${d.dealId}`);
     await load();
+  }
+
+  async function handleCancel() {
+    if (!cancelReason.trim()) return;
+    await run("cancel", () => api.cancelDraft(draftId, me, cancelReason.trim()));
+    setShowCancel(false);
+    setCancelReason("");
+  }
+
+  async function handleRedo() {
+    if (!redoText.trim() || redoText.trim().length < 5) return;
+    await run("redo", () => api.redoTerms(draftId, me, redoText.trim()));
+    setShowRedo(false);
+    setRedoText("");
+  }
+
+  // ---- Cancelled state ----
+  if (isCancelled) {
+    return (
+      <>
+        <BackBar href="/home" title="Agreement" />
+        <Screen className="pt-6">
+          <div className="flex flex-col items-center text-center">
+            <div className="grid h-20 w-20 place-items-center rounded-full bg-danger/10 text-danger">
+              <svg className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+            <p className="mt-4 text-lg font-semibold">Agreement Rejected</p>
+            <p className="mt-1 text-sm text-muted">
+              {cancelledByMe ? "You" : otherFirst} rejected this agreement
+            </p>
+          </div>
+
+          <Card className="mt-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">Reason</p>
+            <p className="mt-2 whitespace-pre-wrap text-sm">{draft.cancelReason}</p>
+          </Card>
+
+          <Card className="mt-3">
+            <p className="text-sm text-muted">
+              <span className="font-semibold text-foreground">{draft.purpose}</span> · {fmtInr(draft.price)} with {other}
+            </p>
+          </Card>
+
+          {!cancelledByMe && (
+            <div className="mt-6 flex flex-col gap-2">
+              <Button
+                size="lg"
+                className="w-full"
+                onClick={() => {
+                  setRedoText(myTerms || "");
+                  setShowRedo(true);
+                }}
+              >
+                ✏️ Propose new terms &amp; redo
+              </Button>
+              <ButtonLink size="lg" variant="secondary" className="w-full" href="/home">
+                Go back
+              </ButtonLink>
+            </div>
+          )}
+          {cancelledByMe && (
+            <ButtonLink size="lg" variant="secondary" className="mx-auto mt-6 w-full max-w-sm" href="/home">
+              Go back to home
+            </ButtonLink>
+          )}
+
+          {/* Redo terms sheet */}
+          {showRedo && (
+            <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
+              <div className="w-full max-w-md rounded-t-3xl bg-surface p-6 sm:rounded-3xl">
+                <p className="text-lg font-semibold">Update your terms</p>
+                <p className="mt-1 text-sm text-muted">
+                  Edit your terms below. A new agreement will be generated for both parties.
+                </p>
+                <textarea
+                  rows={5}
+                  value={redoText}
+                  onChange={(e) => setRedoText(e.target.value)}
+                  className={cx(inputCls, "mt-4")}
+                  placeholder="What you need, timeline, conditions..."
+                />
+                <div className="mt-4 flex gap-2">
+                  <Button variant="secondary" className="flex-1" onClick={() => setShowRedo(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    disabled={busy === "redo" || redoText.trim().length < 5}
+                    onClick={handleRedo}
+                  >
+                    {busy === "redo" ? "Sending…" : "Submit & redo"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </Screen>
+      </>
+    );
   }
 
   return (
@@ -161,25 +266,22 @@ export default function AgreementPage() {
                 <SectionTitle>Signatures</SectionTitle>
                 <Card flush className="divide-y divide-line/70">
                   <SigRow name="You" signedAt={mySig?.signedAt} ok={verified[me]} />
-                  <SigRow name={other} signedAt={theirSig?.signedAt} ok={verified[them]} />
+                  <SigRow name={other} signedAt={sow.signatures.find((s) => s.party === them)?.signedAt} ok={verified[them]} />
                 </Card>
                 <p className="mt-3 flex items-start gap-2 px-1 text-xs text-muted">
                   <LockIcon className="mt-0.5 h-4 w-4 shrink-0" />
                   Signing creates a digital signature from this device over the exact agreement above. Any later change to
                   the agreement would break both signatures, so it can&apos;t be altered without you knowing.
                 </p>
+                <Button variant="ghost" size="sm" className="mt-4 w-full border border-line" onClick={() => window.print()}>
+                  Download Draft Contract (PDF)
+                </Button>
 
                 <div className="mt-5">
                   {locked ? (
-                    me === "buyer" ? (
-                      <ButtonLink size="lg" className="w-full" href={`/txn/${draft.dealId}/pay`}>
-                        Pay {fmtInr(draft.price)}
-                      </ButtonLink>
-                    ) : (
-                      <ButtonLink size="lg" className="w-full" href={`/txn/${draft.dealId}`}>
-                        View transaction
-                      </ButtonLink>
-                    )
+                    <ButtonLink size="lg" className="w-full" href={`/txn/${draft.dealId}`}>
+                      View transaction
+                    </ButtonLink>
                   ) : mySig ? (
                     <p className="rounded-2xl bg-accent-soft px-4 py-3 text-center text-sm font-medium text-accent">
                       You&apos;ve signed. Waiting for {otherFirst} to sign.
@@ -196,16 +298,32 @@ export default function AgreementPage() {
                     </Button>
                   )}
                 </div>
+
+                {/* Redo & Cancel — only before signing */}
                 {!locked && !mySig && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mx-auto mt-3 flex"
-                    onClick={() => run("merge", () => api.mergeSow(draftId))}
-                    disabled={!!busy}
-                  >
-                    {busy === "merge" ? "Preparing…" : "Redo agreement from both sides' terms"}
-                  </Button>
+                  <div className="mt-3 flex flex-col gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full border border-line"
+                      onClick={() => {
+                        setRedoText(myTerms || "");
+                        setShowRedo(true);
+                      }}
+                      disabled={!!busy}
+                    >
+                      ✏️ Change my terms &amp; redo agreement
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full border border-danger/30 text-danger hover:bg-danger/10"
+                      onClick={() => setShowCancel(true)}
+                      disabled={!!busy}
+                    >
+                      ✕ Reject this agreement
+                    </Button>
+                  </div>
                 )}
               </>
             )}
@@ -213,6 +331,8 @@ export default function AgreementPage() {
         )}
         {error && <p className="mt-4 text-center text-sm text-danger">{error}</p>}
       </Screen>
+
+      {/* PIN sheet for signing */}
       {askPin && (
         <PinSheet
           title="Sign the agreement"
@@ -220,6 +340,73 @@ export default function AgreementPage() {
           onSubmit={sign}
           onClose={() => setAskPin(false)}
         />
+      )}
+
+      {/* Cancel / Reject sheet */}
+      {showCancel && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
+          <div className="w-full max-w-md rounded-t-3xl bg-surface p-6 sm:rounded-3xl">
+            <p className="text-lg font-semibold text-danger">Reject this agreement</p>
+            <p className="mt-1 text-sm text-muted">
+              Tell {otherFirst} why you&apos;re rejecting. They can propose new terms or walk away.
+            </p>
+            <textarea
+              rows={4}
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              className={cx(inputCls, "mt-4")}
+              placeholder="Why are you rejecting? e.g. Price is too high, timeline doesn't work..."
+            />
+            <div className="mt-4 flex gap-2">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => { setShowCancel(false); setCancelReason(""); }}
+              >
+                Go back
+              </Button>
+              <Button
+                variant="danger"
+                className="flex-1"
+                disabled={busy === "cancel" || cancelReason.trim().length < 3}
+                onClick={handleCancel}
+              >
+                {busy === "cancel" ? "Rejecting…" : "Reject agreement"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Redo terms sheet */}
+      {showRedo && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
+          <div className="w-full max-w-md rounded-t-3xl bg-surface p-6 sm:rounded-3xl">
+            <p className="text-lg font-semibold">Update your terms</p>
+            <p className="mt-1 text-sm text-muted">
+              Edit your terms below. The agreement will be regenerated from scratch.
+            </p>
+            <textarea
+              rows={5}
+              value={redoText}
+              onChange={(e) => setRedoText(e.target.value)}
+              className={cx(inputCls, "mt-4")}
+              placeholder="What you need, timeline, conditions..."
+            />
+            <div className="mt-4 flex gap-2">
+              <Button variant="secondary" className="flex-1" onClick={() => setShowRedo(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="flex-1"
+                disabled={busy === "redo" || redoText.trim().length < 5}
+                onClick={handleRedo}
+              >
+                {busy === "redo" ? "Sending…" : "Submit & redo"}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

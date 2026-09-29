@@ -71,7 +71,7 @@ export type Contact = {
 // ---- Drafts (off-chain negotiation, B2) ----
 export type Party = "buyer" | "seller";
 export type NewDraft = { role: Party; counterpartyPhone: string; purpose: string; price: string; terms: string };
-export type DraftStatus = "awaiting_other" | "ready_to_merge" | "merged" | "signed";
+export type DraftStatus = "awaiting_other" | "ready_to_merge" | "merged" | "signed" | "cancelled" | "rejected";
 export type Draft = {
   id: string;
   initiator: Party; // the payer ("buyer") or the one requesting money ("seller")
@@ -86,6 +86,8 @@ export type Draft = {
   status: DraftStatus;
   dealId?: string; // set once both have signed
   createdAt: number; // unix seconds
+  cancelledBy?: Party;
+  cancelReason?: string;
 };
 
 /** A point the two sides disagree on. The agreement can't be signed until both propose the same value. */

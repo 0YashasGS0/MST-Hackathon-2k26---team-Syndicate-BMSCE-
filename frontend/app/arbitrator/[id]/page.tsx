@@ -160,7 +160,7 @@ export default function CasePage() {
         <SectionTitle>{open ? "Your ruling" : "Ruling"}</SectionTitle>
         <Card>
           <div className="flex items-baseline justify-between">
-            <p className="text-sm font-medium">Refund to {deal.buyerName.split(" ")[0]}</p>
+            <p className="text-sm font-medium">Refund to {(deal.buyerName || "").split(" ")[0]}</p>
             <p className="num text-2xl font-semibold">{open ? refundPct : (deal.buyerBps ?? 0) / 100}%</p>
           </div>
           {open && (
@@ -177,11 +177,11 @@ export default function CasePage() {
           )}
           <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-2xl bg-info/10 p-3">
-              <p className="text-xs text-muted">To {deal.buyerName.split(" ")[0]}</p>
+              <p className="text-xs text-muted">To {(deal.buyerName || "").split(" ")[0]}</p>
               <p className="num font-semibold text-info">{fmtInr(open ? toBuyer : (amount * BigInt(deal.buyerBps ?? 0)) / 10000n)}</p>
             </div>
             <div className="rounded-2xl bg-accent-soft p-3">
-              <p className="text-xs text-muted">To {deal.sellerName.split(" ")[0]}</p>
+              <p className="text-xs text-muted">To {(deal.sellerName || "").split(" ")[0]}</p>
               <p className="num font-semibold text-accent">
                 {fmtInr(open ? amount - toBuyer : amount - (amount * BigInt(deal.buyerBps ?? 0)) / 10000n)}
               </p>

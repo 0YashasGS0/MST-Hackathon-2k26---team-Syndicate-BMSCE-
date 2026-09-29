@@ -59,11 +59,11 @@ export default function PersonPage() {
     return (
       <>
         <BackBar href="/home" title="Not found" />
-        <p className="p-6 text-center text-muted">No Sakshi account with this number.</p>
+        <p className="p-6 text-center text-muted">No Yescro account with this number.</p>
       </>
     );
 
-  const first = contact.name.split(" ")[0];
+  const first = (contact.name || "").split(" ")[0];
 
   return (
     <div className="flex min-h-dvh flex-col">

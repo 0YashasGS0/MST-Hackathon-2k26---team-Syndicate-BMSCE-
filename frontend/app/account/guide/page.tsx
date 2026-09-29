@@ -27,12 +27,12 @@ const complaintSteps: [string, ReactNode][] = [
 export default function GuidePage() {
   return (
     <>
-      <BackBar href="/account" title="How to use Sakshi" />
+      <BackBar href="/account" title="How to use Yescro" />
       <Screen className="pt-6">
         <Card className="hero-gradient text-white ring-0">
           <p className="text-lg font-semibold tracking-tight">Pay for work safely</p>
           <p className="mt-1 text-sm text-white/85">
-            Sakshi holds your money until the work you agreed on is done. Both sides agree on the details first, so there&apos;s
+            Yescro holds your money until the work you agreed on is done. Both sides agree on the details first, so there&apos;s
             no confusion later.
           </p>
         </Card>

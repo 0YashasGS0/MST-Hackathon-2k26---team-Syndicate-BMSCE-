@@ -3,9 +3,9 @@ import type { MetadataRoute } from "next";
 // Makes the site installable as a phone app ("Add to Home screen").
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Sakshi",
-    short_name: "Sakshi",
-    description: "Pay for work safely. Your money is held until the job is done.",
+    name: "Yescro",
+    short_name: "Yescro",
+    description: "Life is uncertain, payments need not be. Your money is held safely until the work is done.",
     start_url: "/",
     display: "standalone",
     orientation: "portrait",

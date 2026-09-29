@@ -162,6 +162,10 @@ export const api = {
       signature,
       pin,
     ),
+  cancelDraft: (draftId: string, party: Party, reason: string) =>
+    call<Draft>("cancelDraft", () => http("POST", `/drafts/${draftId}/cancel`, { party, reason }), draftId, party, reason),
+  redoTerms: (draftId: string, party: Party, terms: string) =>
+    call<Draft>("redoTerms", () => http("POST", `/drafts/${draftId}/redo-terms`, { party, terms }), draftId, party, terms),
 
   // ---- deals (B1) ----
   listDeals: (address: Address) => call<Deal[]>("listDeals", () => http("GET", `/deals?address=${address}`), address),
