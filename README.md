@@ -72,7 +72,7 @@ backend/      Express API (TypeScript, run with tsx): routes, chain clients, eve
   src/accounts.ts  device binding, security PIN, profile, people
 frontend/     Next.js 16 app (runs without the backend against its built-in mock backend)
 shared/       Code both sides must run identically: SOW schema, hashSow/hashJson, split formula, split.wasm, verifyRuling
-contracts/    DealEscrow.sol + MockUSD.sol (Foundry)
+contracts/    DealEscrow.sol + MockUSD.sol (Foundry), deploy.js (Node deploy + on-chain checks)
 docs/         API.md (interfaces), MVP.md (design), DEPLOY.md, TEAM_ROADMAP.md, STATUS.md, progress/ logs
 deploy/       Caddyfile (HTTPS reverse proxy)
 ```

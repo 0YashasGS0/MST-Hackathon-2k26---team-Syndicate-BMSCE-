@@ -1,0 +1,20 @@
+{
+  "name": "@kernel-exploits/contracts",
+  "private": true,
+  "description": "Compile + deploy MockUSD and DealEscrow without Foundry (node deploy.js)",
+  "scripts": {
+    "compile": "node deploy.js --compile-only",
+    "deploy": "node deploy.js"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "5.4.0",
+    "solc": "0.8.24",
+    "viem": "2.56.9"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "tmp": "0.2.7"
+  }
+}
