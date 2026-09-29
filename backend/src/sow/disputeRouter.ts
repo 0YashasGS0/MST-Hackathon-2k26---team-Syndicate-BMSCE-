@@ -7,6 +7,8 @@ import { createRequire } from "node:module";
 import { createPublicClient, http, parseAbi, parseAbiItem, type Hex } from "viem";
 import { hasCriteria, loadSplitWasm, parseSow, verifyRuling, type AnyReasoning, type Reasoning, type Sow, type SplitWasm } from "@kernel-exploits/shared";
 import { isAddress, isHttpUrl, requireEnv } from "./env";
+import type Database from "better-sqlite3";
+import { getCaller as defaultGetCaller, type GetCaller } from "./auth";
 import { SowStore } from "./store";
 
 /** DealEscrow.Status, in contract order. */
@@ -80,6 +82,10 @@ export function createDealReader(rpcUrl: string, escrowAddress: string): DealRea
 
 export type DisputeRouterDeps = {
   store?: SowStore;
+  /** Used when no store is given: B1's better-sqlite3 Database or a path (default env DB_PATH). */
+  db?: Database.Database | string;
+  /** MERGE: B1 passes PG's getCaller from ../auth. Default: x-user-address only when AUTH_DEV_HEADER=true. */
+  getCaller?: GetCaller;
   /** Default: viem reader from env MST_RPC_URL + ESCROW_ADDRESS. */
   readDeal?: DealReader;
   /** Default: viem getLogs(Settled) from env DEPLOY_BLOCK (default 0). Only consulted when status is Resolved. */
@@ -110,7 +116,8 @@ export function createDisputeRouter(deps: DisputeRouterDeps = {}): Router {
       : async () => {
           throw new Error("no Settled reader configured (set MST_RPC_URL and ESCROW_ADDRESS, or inject readSettled)");
         });
-  const store = deps.store ?? new SowStore();
+  const store = deps.store ?? new SowStore(deps.db);
+  const getCaller = deps.getCaller ?? defaultGetCaller;
   const wasm: Promise<SplitWasm> = loadSplitWasm(deps.wasmBytes ?? defaultWasmBytes());
 
   const router = express.Router();
@@ -156,7 +163,7 @@ export function createDisputeRouter(deps: DisputeRouterDeps = {}): Router {
         return void res.status(502).json({ error: { code: "ChainUnavailable", message: `could not read Settled from MST: ${err instanceof Error ? err.message : String(err)}` } });
       }
     }
-    const sow = parseSow(JSON.parse(stored.sowJson));
+    const sow = stored.sow;
     const result = verifyRuling({
       reasoning,
       onchainReasoningHash: onchain.reasoningHash,

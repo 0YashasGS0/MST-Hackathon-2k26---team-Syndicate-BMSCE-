@@ -5,13 +5,18 @@ import { hashSow, parseSow } from "@kernel-exploits/shared";
 import { createLlmChain } from "../agent/createLlmClient";
 import type { LlmChain } from "../agent/toolRetry";
 import { LlmUnavailableError, MERGE_PROMPT_VERSION, SowMergeError, mergeSow } from "../agent/mergeSow";
-import { getCaller } from "./auth";
+import type Database from "better-sqlite3";
+import { getCaller as defaultGetCaller, type GetCaller } from "./auth";
 import { ADDRESS_RE, isAddress, isHttpUrl, requireEnv as requireEnvFor } from "./env";
 import { SowStore, type Draft } from "./store";
 import { createLinkVerifier, type LinkVerifier } from "./verifyLink";
 
 export type SowRouterDeps = {
   store?: SowStore;
+  /** Used when no store is given: B1's better-sqlite3 Database or a path (default env DB_PATH). */
+  db?: Database.Database | string;
+  /** MERGE: B1 passes PG's getCaller from ../auth. The ONLY identity source. Default: x-user-address iff AUTH_DEV_HEADER=true. */
+  getCaller?: GetCaller;
   llm?: LlmChain;
   usdAddress?: string; // default env USD_ADDRESS
   demoFallback?: boolean; // default env AGENT_DEMO_FALLBACK === "true"
@@ -78,7 +83,8 @@ export function createSowRouter(deps: SowRouterDeps = {}): Router {
       rpcUrl: requireEnv("MST_RPC_URL", process.env.MST_RPC_URL, isHttpUrl),
       escrowAddress: requireEnv("ESCROW_ADDRESS", process.env.ESCROW_ADDRESS, isAddress),
     });
-  const store = deps.store ?? new SowStore();
+  const store = deps.store ?? new SowStore(deps.db);
+  const getCaller = deps.getCaller ?? defaultGetCaller;
   const llm = deps.llm ?? createLlmChain(); // throws at startup on bad LLM_PROVIDER / missing gemini LLM_MODEL
   const demoFallback = deps.demoFallback ?? process.env.AGENT_DEMO_FALLBACK === "true";
   const now = deps.now ?? (() => Math.floor(Date.now() / 1000));
@@ -88,8 +94,8 @@ export function createSowRouter(deps: SowRouterDeps = {}): Router {
 
   function caller(req: Request): string {
     const who = getCaller(req);
-    if (!who) throw new HttpError(401, "Unauthenticated", "caller identity is required");
-    return who;
+    if (!who || !ADDRESS_RE.test(who)) throw new HttpError(401, "Unauthorized", "sign in first (no caller identity on this request)");
+    return who.toLowerCase();
   }
 
   function loadDraft(req: Request): Draft {
@@ -121,7 +127,7 @@ export function createSowRouter(deps: SowRouterDeps = {}): Router {
             version: v.version,
             sow: JSON.parse(v.sowJson),
             sowHash: v.sowHash,
-            conflicts: v.conflicts,
+            conflicts: v.conflictNotes,
             approvals: { buyer: v.buyerApproved, seller: v.sellerApproved },
           }
         : null,
@@ -166,7 +172,7 @@ export function createSowRouter(deps: SowRouterDeps = {}): Router {
         .filter((k) => terms[k] !== draft[k])
         .map((k) => `${k} ${draft[k]} → ${terms[k]}`);
       const note = `[server] Buyer updated terms in v${latest.version + 1}: ${changes.join(", ") || "no change"}`;
-      store.addVersion(draft.id, JSON.stringify(sow), hashSow(sow), [...latest.conflicts, note], now());
+      store.addVersion(draft.id, JSON.stringify(sow), hashSow(sow), [...latest.conflictNotes, note], now());
     })();
     res.json(withLatest(store.getDraft(draft.id)!));
   });
@@ -183,7 +189,7 @@ export function createSowRouter(deps: SowRouterDeps = {}): Router {
     const draft = loadDraft(req);
     requireParty(draft, caller(req));
     if (draft.status === "linked") throw new HttpError(409, "BadStatus", "draft is already linked to an on-chain deal");
-    if (!draft.sellerPoints) throw new HttpError(409, "BadStatus", "waiting for seller input");
+    if (!draft.sellerPoints || !draft.buyerConstraints) throw new HttpError(409, "BadStatus", "waiting for the other party's terms");
 
     const result = await mergeSow(
       {

@@ -2,7 +2,7 @@
 // and the code computes each fulfilledPct (scoreCriteria.ts). Either way the split comes ONLY from computeBuyerBps.
 // B1's /deals/:id/resolve calls scoreDispute() and then proposeResolution(id, buyerBps, reasoningHash).
 import { z } from "zod";
-import { computeBuyerBps, hashJson, hashSow, parseSow, type Reasoning, type RulingScore, type Sow } from "@kernel-exploits/shared";
+import { computeBuyerBps, hashSow, parseSow, type Reasoning, type RulingScore, type Sow } from "@kernel-exploits/shared";
 import { SowStore } from "../sow/store";
 import { DemoFallbackError, findDemoScenario, groundTruthScores } from "./demoFallback";
 import type { Scenario } from "./scenarios";
@@ -201,8 +201,7 @@ export async function scoreDispute(input: DisputeInput, deps: ScorerDeps = {}): 
     model,
     promptVersion,
   };
-  const reasoningHash = hashJson(reasoning);
-  store.saveRuling(reasoningHash, input.dealId, reasoning, now());
+  const reasoningHash = store.saveRuling(reasoning, now()); // = hashJson(reasoning)
   return { scores, buyerBps, reasoningHash, model, promptVersion };
 }
 

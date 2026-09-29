@@ -14,7 +14,7 @@
 
 ## Drafts & SOW
 > B2's router, mounted by B1 (`app.use(createSowRouter())`). Paths are `/drafts/*` so they never clash with B1's on-chain `/deals/:id`.
-> Caller identity: `getCaller(req)` in `backend/src/sow/auth.ts`, currently the header `x-user-address: 0x…` (temporary, until PG's signed login replaces it). Missing → 401; not a party → 403.
+> Caller identity: the `getCaller` injected into `createSowRouter` / `createDisputeRouter` (B1 passes PG's `getCaller` from `backend/src/auth.ts`: session cookie; the `x-user-address: 0x…` header **only** when `AUTH_DEV_HEADER=true`). B2's default `getCaller` (`backend/src/sow/auth.ts`) has no sessions: header iff `AUTH_DEV_HEADER=true`, else nobody is signed in. No identity → **401** `{ "error": { "code": "Unauthorized", "message" } }`; signed in but not a party → 403 `Forbidden`.
 
 | Method | Path | Owner | Body → Response |
 |---|---|---|---|
@@ -104,7 +104,8 @@ type Reasoning = { dealId: number; sowHash: string; deliveryHash: string; eviden
 // verifyRuling also returns fulfilledMatches: boolean | null — v3: every fulfilledPct recomputed from its verdicts; null for v1/v2.
 
 // Agent rulings omit `source` (missing = "agent"), so their hashes are unchanged. Arbitrator rulings are stored by B1
-// under the reasoningHash passed to arbitrate(): { source: "arbitrator", dealId, sowHash, buyerBps, ruling, ...extra }.
+// with `reasoningHash = store.saveRuling(ruling)` (= hashJson(ruling)) and then passed to arbitrate():
+// minimal { source: "arbitrator", dealId, sowHash, buyerBps, ruling }, extra fields allowed (they are hashed too).
 type ArbitratorReasoning = { source: "arbitrator"; dealId: number; sowHash: string; buyerBps: number; ruling: string; [extra: string]: unknown };
 
 // shared/src/verify.ts verifyRuling() — run it in the browser too (with split.wasm, on-chain hash read from MST directly).

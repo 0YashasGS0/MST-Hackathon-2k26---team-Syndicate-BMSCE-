@@ -124,8 +124,8 @@ describe("GET /deals/:id/verify — arbitrator rulings (Settled event)", () => {
   async function withArbitrator(buyerBps: number) {
     const { store } = await seeded();
     const arb = { source: "arbitrator" as const, dealId: DEAL_ID, sowHash: hashSow(sow), buyerBps, ruling: "Menu incomplete, form broken.", arbitrator: "0x4444444444444444444444444444444444444444" };
-    const hash = hashJson(arb);
-    store.saveRuling(hash, DEAL_ID, arb, 1); // what B1 stores when it calls arbitrate(id, bps, hash)
+    const hash = store.saveRuling(arb, 1); // what B1 stores before it calls arbitrate(id, bps, hash)
+    expect(hash).toBe(hashJson(arb));
     return { store, hash };
   }
   // arbitrate() leaves proposedBuyerBps at the agent's stale 3800; status Resolved (10).
