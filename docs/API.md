@@ -3,6 +3,7 @@
 > Base URL: `NEXT_PUBLIC_API_URL`. JSON everywhere. Errors: `{ "error": { "code": "BadStatus", "message": "..." } }`.
 > Amounts: strings in token base units (6 decimals) — `"100000000"` = 100 mUSD. Hashes: `0x`-prefixed 32-byte hex.
 > Any change after freeze: update this file in the same commit + note under "Interface changes" in your progress log.
+> Every route: security headers, an exact-origin CORS allowlist (`CORS_ORIGINS`, credentials allowed), per-IP rate limits → `429 { error: { code: "RateLimited" } }`, JSON bodies ≤ 100 KB (`413`), generic `500 { error: { code: "Internal" } }`. `GET /arbitrator/cases` needs `x-admin-token`. See `SECURITY.md`.
 
 ## Auth & KYC
 | Method | Path | Owner | Body → Response |
@@ -11,8 +12,8 @@
 | POST | `/auth/verify` | PG | `{ message, signature }` → `{ user, expiresIn }` plus HttpOnly `mst_session` cookie |
 | POST | `/auth/logout` | PG | — → `204` and clears the session cookie |
 | POST | `/auth/saral` | PG | `{ address, saralSessionProof }` → `503` until mentor docs and a docs-backed verifier are available |
-| POST | `/kyc/submit` | B1 | multipart `file` → `User` |
-| POST | `/admin/kyc/:address/approve` | B1 | header `x-admin-token` → `{ txHash }` |
+| POST | `/kyc/submit` | B1 | multipart `file` (PDF/PNG/JPEG/WebP/GIF/TXT/ZIP/JSON, ≤ 10 MB) → `User`. **Signed-in only**, for the caller's own wallet (an `address` field that differs → 403) |
+| POST | `/admin/kyc/:address/approve` | B1 | header `x-admin-token` → `{ txHash }` (the API key alone → 401) |
 
 ## Drafts & SOW
 > B2's router, mounted by B1: `app.use(createSowRouter({ store, getCaller, isAuthorizedSigner }))`. Paths are `/drafts/*` so they never clash with B1's on-chain `/deals/:id`.
@@ -38,10 +39,10 @@
 |---|---|---|---|
 | GET | `/deals?address=0x..` | B1 | → `DealSummary[]` |
 | GET | `/deals/:id` | B1 | → `Deal` |
-| POST | `/deals/:id/delivery` | B1 | multipart `file` → `{ hash }` |
-| POST | `/deals/:id/evidence` | B1 | multipart `files[]`, `complaint` → `{ hash }` |
-| POST | `/deals/:id/resolve` | B1 (calls B2) | — → `{ scores, buyerBps, reasoningHash, txHash }` |
-| POST | `/deals/:id/timeout` | B1 | — → `{ txHash }` |
+| POST | `/deals/:id/delivery` | B1 | multipart `files[]` (≤ 5 × 10 MB) → `{ hash }`. The caller must be the deal's **seller** on-chain (403 otherwise, 404 unknown deal) |
+| POST | `/deals/:id/evidence` | B1 | multipart `files[]`, `complaint` → `{ hash }`. Caller must be the deal's buyer or seller on-chain |
+| POST | `/deals/:id/resolve` | B1 (calls B2) | `{ complaintText?, deliveryNotes?, evidenceNotes? }` → `{ scores, buyerBps, reasoningHash, txHash }`. Caller must be a party on-chain; rate-limited; 409 `NoSow`, 422 `ScoringFailed`, 502 `LlmUnavailable` |
+| POST | `/deals/:id/timeout` | B1 | — → `{ txHash }`. Caller must be a party on-chain; rate-limited |
 | GET | `/deals/:id/sow` | B2 | → `SowVersion` of the draft linked to deal `:id` (with signatures). Parties of the deal only (401/403); 404 `NotFound` if no linked SOW; 400 for a bad id. **Alias:** `GET /deals/:id/agreement`. Mounted via `createDisputeRouter({ store, getCaller })` |
 | GET | `/deals/:id/verify` | B2 | → `VerifyResponse` (below). Reads `getDeal(id)` on MST. 404 `NoRuling` when there's no `reasoningHash` on-chain yet; 404 `NotFound` for an unknown deal; 400 for a bad id; 502 `ChainUnavailable`. Mounted via `createDisputeRouter()` |
 | POST | `/arbitrator/deals/:id/rule` | B1 | header `x-admin-token`, `{ buyerBps, ruling }` → `{ txHash }` |

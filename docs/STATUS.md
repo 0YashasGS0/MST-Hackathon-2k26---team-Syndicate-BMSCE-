@@ -32,3 +32,4 @@
 | 09-29 | FE is a UPI-style app (phone + OTP login bound to one device, one-time KYC, single scrolling home); hashes, addresses and chain name hidden from users | FE |
 | 09-29 | Arbitrator console is a separate admin surface, not part of the user app | FE |
 | 09-29 | Amounts shown in ₹ at a fixed display rate (84), matching PG's demo quote | FE |
+| 09-29 | Security hardening + Docker/Caddy deployment (`SECURITY.md`, `docs/DEPLOY.md`); production start refuses unsafe config; CI on every PR | B2 (owner request) |

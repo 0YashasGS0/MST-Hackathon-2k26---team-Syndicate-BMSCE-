@@ -1,0 +1,14 @@
+# TLS termination + reverse proxy. Caddy obtains and renews HTTPS certificates automatically.
+# Use two subdomains of ONE site (same-site), so PG's SameSite=Lax session cookie is sent to the API.
+{$APP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy frontend:3000
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 60MB
+	}
+	reverse_proxy backend:5000
+}
