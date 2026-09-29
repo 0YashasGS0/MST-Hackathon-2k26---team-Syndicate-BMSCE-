@@ -1,7 +1,8 @@
 # Deploying
 
 One VM (or any Docker host) runs three containers: **Caddy** (HTTPS), the **frontend** (Next.js) and the
-**backend** (Express + SQLite on a volume). The contracts are already on MST testnet (`deployments.md`).
+**backend** (Express + SQLite on a volume). The contracts must be deployed to MST testnet first (B1, `scripts/`) and
+their addresses recorded in `deployments.md`; the backend and the frontend's on-chain actions need them.
 
 ```
 browser ── https://app.example.com ──► Caddy ──► frontend:3000
@@ -13,7 +14,8 @@ to the API only when app and API are same-site.
 
 ## 1. Prerequisites
 - A host with Docker + Compose, ports 80/443 open, and DNS `A` records for both subdomains pointing at it.
-- Funded testnet system wallets (ORG, agent, arbitrator) and the contract addresses from `deployments.md`.
+- Funded testnet system wallets (ORG, agent, arbitrator).
+- `DealEscrow` + `MockUSD` deployed on MST testnet, with their addresses and deploy block filled in `deployments.md`.
 - An LLM key (`GROQ_API_KEY` / `GEMINI_API_KEY`, see `docs/progress/B2.md`).
 
 ## 2. Configure
