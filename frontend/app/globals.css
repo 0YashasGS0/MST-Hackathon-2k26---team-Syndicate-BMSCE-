@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/* Design tokens — change colours here, not in components. */
+:root {
+  --background: #f3f5f4;
+  --surface: #ffffff;
+  --surface-2: #f1f4f3;
+  --foreground: #0f1a16;
+  --muted: #5f6b67;
+  --line: #e3e8e6;
+  --accent: #0a7a55;
+  --accent-strong: #065f46;
+  --accent-soft: #e6f4ee;
+  --accent-fg: #ffffff;
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #c2410c;
+  --info: #0e7490;
+  --elev-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 2px 8px rgb(16 24 40 / 0.05);
+  --elev-raised: 0 8px 24px rgb(6 95 70 / 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b0f0e;
+    --surface: #141a18;
+    --surface-2: #1b2320;
+    --foreground: #e9efec;
+    --muted: #93a19c;
+    --line: #26302c;
+    --accent: #34d399;
+    --accent-strong: #059669;
+    --accent-soft: #10291f;
+    --accent-fg: #06201a;
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --danger: #fb923c;
+    --info: #22d3ee;
+    --elev-card: 0 1px 2px rgb(0 0 0 / 0.3);
+    --elev-raised: 0 8px 24px rgb(0 0 0 / 0.4);
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--accent-fg);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --shadow-card: var(--elev-card);
+  --shadow-raised: var(--elev-raised);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Brand band used behind the home header and hero cards. */
+.hero-gradient {
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgb(255 255 255 / 0.14) 0%, transparent 55%),
+    linear-gradient(135deg, #0a7a55 0%, #065f46 60%, #064e3b 100%);
+}
+
+/* Amounts line up and don't jump while typing. */
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
