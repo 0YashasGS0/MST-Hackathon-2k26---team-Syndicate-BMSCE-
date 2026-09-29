@@ -36,7 +36,8 @@ app.use(resolveRouter);
 
 // PG modules
 app.use(createAuthRouter(db));
-createPgIntegration({ pub, org, db });
+const { paymentsRouter } = createPgIntegration({ pub, org, db });
+app.use(paymentsRouter);
 
 // B2 modules
 const store = new SowStore(db);
