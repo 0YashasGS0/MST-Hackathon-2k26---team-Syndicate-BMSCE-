@@ -1,12 +1,9 @@
-// SQLite schema. Shared by every role's routes (kyc, deals, resolve, payments).
-// The chain is the source of truth for status/amounts; SQLite is only for
-// text, files and things that never went on-chain.
+// SQLite schema, per TEAM_ROADMAP.md §1 "Hour 1-3 step 1".
+// The chain is the source of truth for status/amounts; SQLite is only
+// for text, files and things that never went on-chain (drafts, KYC docs).
 import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DATA_DIR = path.join(__dirname, "..", "data");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -73,38 +70,5 @@ CREATE TABLE IF NOT EXISTS chain_events (
   args_json TEXT,
   block INTEGER,
   PRIMARY KEY (tx_hash, log_index)
-);
-
--- Hour 5-8: full agent/arbitrator reasoning, keyed by the on-chain reasoningHash
--- so the verify page (FE) can fetch and recompute it. See docs §2 "reasoningHash".
-CREATE TABLE IF NOT EXISTS resolutions (
-  reasoning_hash TEXT PRIMARY KEY,
-  deal_id INTEGER,
-  kind TEXT,                -- 'agent' | 'arbitrator'
-  buyer_bps INTEGER,
-  payload_json TEXT,        -- { scores, buyerBps, model, promptVersion, evidenceHash, deliveryHash }
-  tx_hash TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
--- PG's table (Person 3), per TEAM_ROADMAP.md §3 "Hour 2-4 step 1".
--- Lives in the same DB so B1 and PG never fork state.
-CREATE TABLE IF NOT EXISTS payments (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  deal_id INTEGER UNIQUE,
-  amount TEXT,
-  status TEXT DEFAULT 'created',   -- created | paid | minted | funded | failed
-  mint_tx TEXT,
-  fund_tx TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
--- PG's settlement tracking, per §3 "Hour 4-6".
-CREATE TABLE IF NOT EXISTS payouts (
-  deal_id INTEGER PRIMARY KEY,
-  to_buyer TEXT,
-  to_seller TEXT,
-  final_status TEXT,
-  tx_hash TEXT
 );
 `);

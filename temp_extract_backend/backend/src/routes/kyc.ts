@@ -3,13 +3,9 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { getAddress } from "viem";
-import { fileURLToPath } from "url";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { db } from "../db";
 import { org, escrowAbi, ESCROW, sendContractTx } from "../chain";
 import { requireApiKey } from "../auth";
-import { gasDrip } from "../integrations/pg";
 
 export const kycRouter = Router();
 
@@ -50,7 +46,7 @@ kycRouter.post("/admin/kyc/:address/approve", requireApiKey, async (req, res) =>
        ON CONFLICT(address) DO UPDATE SET kyc_level = 2`
     ).run(address.toLowerCase());
 
-    await gasDrip(address).catch(e => console.error("gasDrip failed", e));
+    // NOTE: hook up PG's gasDrip(address) here once that endpoint exists.
 
     res.json({ address, kyc_level: 2, tx_hash: hash });
   } catch (err: any) {

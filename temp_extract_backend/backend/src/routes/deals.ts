@@ -3,13 +3,9 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { keccak256 } from "viem";
-import { fileURLToPath } from "url";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { db } from "../db";
 import { pub, escrowAbi, ESCROW } from "../chain";
 import { requireApiKey } from "../auth";
-import { getCaller } from "../integrations/b2";
 
 export const dealsRouter = Router();
 
@@ -54,7 +50,6 @@ dealsRouter.get("/deals/:id", requireApiKey, async (req, res) => {
 
 // POST /deals/:id/delivery -- save file, return keccak256 hash for seller to sign markDelivered(id, hash)
 dealsRouter.post("/deals/:id/delivery", requireApiKey, upload.single("file"), (req, res) => {
-  const caller = getCaller(req);
   if (!req.file) return res.status(400).json({ error: "file is required" });
   const dealId = Number(req.params.id);
   const bytes = fs.readFileSync(req.file.path);
@@ -71,7 +66,6 @@ dealsRouter.post("/deals/:id/delivery", requireApiKey, upload.single("file"), (r
 
 // POST /deals/:id/evidence -- same idea, for dispute evidence -> raiseDispute(id, hash)
 dealsRouter.post("/deals/:id/evidence", requireApiKey, upload.single("file"), (req, res) => {
-  const caller = getCaller(req);
   if (!req.file) return res.status(400).json({ error: "file is required" });
   const dealId = Number(req.params.id);
   const bytes = fs.readFileSync(req.file.path);
