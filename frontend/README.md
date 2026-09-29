@@ -1,36 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# frontend
 
-## Getting Started
+The Sakshi app: Next.js 16 (App Router) + Tailwind 4 + viem. A UPI-style payments app where hashes, addresses and the
+chain stay out of the user's way.
 
-First, run the development server:
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm ci
+cp .env.example .env.local
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+By default **every call goes to the built-in mock backend** (`app/api/mock` → `lib/mocks.ts`), so the app works without
+the backend. Switch endpoints to the real backend one at a time with `NEXT_PUBLIC_LIVE_ENDPOINTS` (comma-separated
+keys from `lib/api.ts`, or `*` for all) and point `NEXT_PUBLIC_API_URL` at it (`http://localhost:5000`). Mock test
+logins and PINs are in `lib/mocks.ts`. In a production build the mock backend is off unless `ENABLE_MOCK_BACKEND=true`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`npm run build` · `npx eslint .`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## How it talks to the rest
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `lib/api.ts` — typed client; shapes in `lib/types.ts` match `../docs/API.md`. Sends PG's session cookie and
+  `X-API-Key` (`NEXT_PUBLIC_API_KEY`, a public app key, not a secret).
+- `lib/wallet.ts` + `lib/pg-wallet.ts` — wallet sign-in (MetaMask / BridgeKey, or a per-browser demo wallet).
+- `lib/onchain.ts` — the user's own wallet signs the escrow actions (`markDelivered`, `release`, `raiseDispute`,
+  `acceptResolution`, `escalate`) on MST; `lib/contracts.ts` holds the ABI and addresses (`NEXT_PUBLIC_ESCROW_ADDRESS`).
+- `lib/device-key.ts` — the per-device key that signs agreements; the backend accepts it once the device is bound.
+- Security headers and the CSP are set in `next.config.ts`.

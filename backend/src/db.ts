@@ -86,4 +86,28 @@ CREATE TABLE IF NOT EXISTS payouts (
   final_status TEXT,
   tx_hash TEXT
 );
+
+-- Notes the parties typed with a delivery or a complaint (the files themselves are in "files").
+CREATE TABLE IF NOT EXISTS deal_notes (
+  deal_id    INTEGER NOT NULL,
+  kind       TEXT NOT NULL,          -- delivery | evidence
+  note       TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (deal_id, kind)
+);
+
+-- The complaint behind a dispute (what the agent and the arbitrator read). One per deal.
+CREATE TABLE IF NOT EXISTS complaints (
+  deal_id              INTEGER PRIMARY KEY,
+  raised_by            TEXT NOT NULL,   -- buyer | seller
+  text                 TEXT NOT NULL,
+  deliverable_ids_json TEXT NOT NULL DEFAULT '[]',
+  created_at           INTEGER NOT NULL
+);
 `);
+
+// Columns added after the first schema (older local DBs get them here).
+const fileCols = new Set((db.prepare("PRAGMA table_info(files)").all() as { name: string }[]).map((c) => c.name));
+for (const [name, type] of [["name", "TEXT"], ["mime", "TEXT"], ["size", "INTEGER"]] as const) {
+  if (!fileCols.has(name)) db.exec(`ALTER TABLE files ADD COLUMN ${name} ${type}`);
+}

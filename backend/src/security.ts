@@ -102,7 +102,8 @@ export function requireAdminToken(req: Request, res: Response, next: NextFunctio
   next();
 }
 
-export const UPLOAD_LIMITS = { fileSize: 10 * 1024 * 1024, files: 5, fields: 20, fieldSize: 64 * 1024 };
+// Evidence can be phone videos: 5 files × 20 MB (the frontend enforces the same; Caddy caps a request at 110 MB).
+export const UPLOAD_LIMITS = { fileSize: 20 * 1024 * 1024, files: 5, fields: 30, fieldSize: 64 * 1024 };
 const ALLOWED_TYPES = new Set([
   "application/pdf",
   "image/png",
@@ -112,16 +113,19 @@ const ALLOWED_TYPES = new Set([
   "text/plain",
   "application/zip",
   "application/json",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
 ]);
 
 /** multer with size/count limits, a type allowlist and random, extension-less file names (never the client's name). */
-export function safeUpload(dir: string) {
+export function safeUpload(dir: string, limits: Partial<typeof UPLOAD_LIMITS> = {}) {
   return multer({
     storage: multer.diskStorage({
       destination: dir,
       filename: (_req, _file, cb) => cb(null, randomBytes(16).toString("hex")),
     }),
-    limits: UPLOAD_LIMITS,
+    limits: { ...UPLOAD_LIMITS, ...limits },
     fileFilter: (_req, file, cb) => {
       if (ALLOWED_TYPES.has(file.mimetype)) return cb(null, true);
       cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", `unsupported file type ${path.basename(file.mimetype)}`));

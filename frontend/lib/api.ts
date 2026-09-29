@@ -76,6 +76,13 @@ const call = <T>(key: string, live: () => Promise<T>, ...mockArgs: unknown[]) =>
 
 const fileMeta = (files: File[]): Attachment[] => files.map((f) => ({ name: f.name, type: f.type, size: f.size }));
 
+// Live on-chain actions: the backend stores files/notes and returns the hash, the user's own wallet signs the
+// DealEscrow call (the backend never moves funds for users), then the updated deal is read back.
+// Loaded lazily: onchain.ts → wallet.ts imports this module.
+const escrow = async (fn: Parameters<typeof import("./onchain").sendEscrow>[0], args: readonly unknown[]) =>
+  (await import("./onchain")).sendEscrow(fn, args);
+const dealId = (id: string) => BigInt(id);
+
 export const api = {
   // ---- wallet sign-in (PG) ----
   authNonce: (address: Address) =>
@@ -160,10 +167,29 @@ export const api = {
   listDeals: (address: Address) => call<Deal[]>("listDeals", () => http("GET", `/deals?address=${address}`), address),
   getDeal: (id: string) => call<Deal>("getDeal", () => http("GET", `/deals/${id}`), id),
   getAgreement: (id: string) => call<SowVersion | null>("getAgreement", () => http("GET", `/deals/${id}/agreement`), id),
-  // TODO(FE): markDelivered / release / acceptResolution / escalate become contract calls signed through SARAL.
   markDelivered: (id: string, note: string) =>
-    call<Deal>("markDelivered", () => http("POST", `/deals/${id}/delivery`, { note }), id, note),
-  release: (id: string, pin: string) => call<Deal>("release", () => http("POST", `/deals/${id}/release`, { pin }), id, pin),
+    call<Deal>(
+      "markDelivered",
+      async () => {
+        const { hash } = await http<{ hash: Hex }>("POST", `/deals/${id}/delivery`, { note });
+        await escrow("markDelivered", [dealId(id), hash]);
+        return http<Deal>("GET", `/deals/${id}`);
+      },
+      id,
+      note,
+    ),
+  /** The PIN confirms the buyer is present; the buyer's wallet then signs release(). */
+  release: (id: string, pin: string) =>
+    call<Deal>(
+      "release",
+      async () => {
+        await http("POST", "/auth/pin/verify", { pin });
+        await escrow("release", [dealId(id)]);
+        return http<Deal>("GET", `/deals/${id}`);
+      },
+      id,
+      pin,
+    ),
 
   // ---- payments (PG) ----
   onrampSession: (id: string) => call<OnrampSession>("onrampSession", () => http("POST", `/onramp/${id}/session`), id),
@@ -179,13 +205,41 @@ export const api = {
       // TODO(storage): upload the files and keep their URLs; only metadata is sent for now.
       attachments: fileMeta(files),
     };
-    return call<Complaint>("raiseComplaint", () => http("POST", `/deals/${id}/evidence`, form), id, party, plain);
+    return call<Complaint>(
+      "raiseComplaint",
+      async () => {
+        const { hash } = await http<{ hash: Hex }>("POST", `/deals/${id}/evidence`, form);
+        await escrow("raiseDispute", [dealId(id), hash]);
+        // Ask the AI agent to score the dispute (it proposes a split on-chain); the page polls the resolution.
+        http("POST", `/deals/${id}/resolve`, { complaintText: plain.text }).catch(() => undefined);
+        return (await http<Complaint | null>("GET", `/deals/${id}/complaint`))!;
+      },
+      id,
+      party,
+      plain,
+    );
   },
   getComplaint: (id: string) => call<Complaint | null>("getComplaint", () => http("GET", `/deals/${id}/complaint`), id),
   getResolution: (id: string) => call<Resolution>("getResolution", () => http("GET", `/deals/${id}/resolution`), id),
   acceptResolution: (id: string, party: Party) =>
-    call<Deal>("acceptResolution", () => http("POST", `/deals/${id}/accept`, { party }), id, party),
-  escalate: (id: string) => call<Deal>("escalate", () => http("POST", `/deals/${id}/escalate`), id),
+    call<Deal>(
+      "acceptResolution",
+      async () => {
+        await escrow("acceptResolution", [dealId(id)]);
+        return http<Deal>("GET", `/deals/${id}`);
+      },
+      id,
+      party,
+    ),
+  escalate: (id: string) =>
+    call<Deal>(
+      "escalate",
+      async () => {
+        await escrow("escalate", [dealId(id)]);
+        return http<Deal>("GET", `/deals/${id}`);
+      },
+      id,
+    ),
 
   // ---- arbitrator (B1) ----
   listCases: () => call<Deal[]>("listCases", () => http("GET", "/arbitrator/cases")),

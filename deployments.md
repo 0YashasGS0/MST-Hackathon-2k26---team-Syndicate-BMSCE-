@@ -4,8 +4,11 @@
 
 | Contract | Address | Deploy tx | Block | Explorer | Verified |
 |---|---|---|---|---|---|
-| MockUSD | 0x8aEc97AA15A442E1130ca8573eAC0453752D5c6e | 0x0000000000000000000000000000000000000000000000000000000000000000 | 1 | — | ⬜ |
-| DealEscrow | 0x52719e0a72C0631cD9654a6039aB69206d9f7704 | 0x0000000000000000000000000000000000000000000000000000000000000000 | 1 | — | ⬜ |
+| MockUSD | — (not deployed yet) | — | — | — | ⬜ |
+| DealEscrow | — (not deployed yet) | — | — | — | ⬜ |
+
+> The previous values here were placeholders: they equalled the demo buyer/seller **wallet** addresses below, with an all-zero deploy tx.
+> Deploy with `contracts/deploy.js` (or `forge create`), then fill in the real contract addresses, tx hash and block.
 
 ## System wallets (addresses only)
 | Role | Address |

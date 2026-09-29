@@ -8,8 +8,8 @@ import { useUser } from "@/components/session";
 import { useDeal } from "@/components/useDeal";
 import { Avatar, BackBar, Button, ButtonLink, Card, inputCls, Loading, Screen, SectionTitle } from "@/components/ui";
 
-const MAX_FILES = 10;
-const MAX_MB = 50;
+const MAX_FILES = 5; // = backend UPLOAD_LIMITS
+const MAX_MB = 20;
 
 type Proof = { file: File; url: string };
 
