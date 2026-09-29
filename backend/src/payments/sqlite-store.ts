@@ -1,10 +1,12 @@
-import type {
-  NewPaymentRecord,
-  PaymentConfirmationStore,
-  PaymentHistoryStore,
-  PaymentRecord,
-  PaymentStatus,
-  PayoutRecord,
+import {
+  PAYMENT_METHODS,
+  type PaymentMethod,
+  type NewPaymentRecord,
+  type PaymentConfirmationStore,
+  type PaymentHistoryStore,
+  type PaymentRecord,
+  type PaymentStatus,
+  type PayoutRecord,
 } from "./onramp";
 
 type SqliteValue = string | number | bigint | null;
@@ -25,6 +27,7 @@ type PaymentRow = {
   deal_id: unknown;
   amount: unknown;
   status: unknown;
+  method?: unknown;
   mint_tx: unknown;
   fund_tx: unknown;
   created_at: unknown;
@@ -61,6 +64,7 @@ function toPaymentRecord(value: unknown): PaymentRecord {
     dealId: Number(row.deal_id),
     amount: String(row.amount),
     status: row.status as PaymentStatus,
+    method: row.method == null ? null : String(row.method) as PaymentMethod,
     mintTx: row.mint_tx === null ? null : String(row.mint_tx),
     fundTx: row.fund_tx === null ? null : String(row.fund_tx),
     createdAt: String(row.created_at),
@@ -91,6 +95,7 @@ export class SqlitePaymentStore implements PaymentConfirmationStore, PaymentHist
         amount TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'created'
           CHECK (status IN ('created', 'paid', 'minted', 'funded', 'failed')),
+        method TEXT CHECK (method IN ('upi_qr', 'upi_id', 'upi_app', 'crypto')),
         mint_tx TEXT,
         fund_tx TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -107,6 +112,13 @@ export class SqlitePaymentStore implements PaymentConfirmationStore, PaymentHist
         claimed_until INTEGER NOT NULL
       );
     `);
+    // B1 may already have created the shared payments table before PG mounts.
+    // Add the display-only method column safely for that existing table.
+    try {
+      database.exec(`ALTER TABLE payments ADD COLUMN method TEXT CHECK (method IN (${PAYMENT_METHODS.map((method) => `'${method}'`).join(", ")}))`);
+    } catch (error) {
+      if (!(error instanceof Error) || !/duplicate column name: method/i.test(error.message)) throw error;
+    }
   }
 
   async createIfAbsent(payment: NewPaymentRecord): Promise<PaymentRecord> {
@@ -126,12 +138,16 @@ export class SqlitePaymentStore implements PaymentConfirmationStore, PaymentHist
 
   async claimConfirmation(
     dealId: number,
+    method: PaymentMethod = "upi_qr",
   ): Promise<{ claimed: boolean; payment: PaymentRecord }> {
     return this.withImmediateTransaction(() => {
       let payment = this.getPaymentRow(dealId);
       if (!payment) {
         throw new Error(`Payment session not found for deal ${dealId}`);
       }
+      this.database.prepare("UPDATE payments SET method = ? WHERE deal_id = ?").run(method, dealId);
+      payment = this.getPaymentRow(dealId);
+      if (!payment) throw new Error(`Payment session not found for deal ${dealId}`);
       let record = toPaymentRecord(payment);
       if (record.status === "funded") return { claimed: false, payment: record };
 
@@ -211,7 +227,7 @@ export class SqlitePaymentStore implements PaymentConfirmationStore, PaymentHist
   private getPaymentRow(dealId: number): unknown | null {
     const row = this.database
       .prepare(
-        `SELECT id, deal_id, amount, status, mint_tx, fund_tx, created_at
+        `SELECT id, deal_id, amount, status, method, mint_tx, fund_tx, created_at
          FROM payments WHERE deal_id = ?`,
       )
       .get(dealId);

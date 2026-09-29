@@ -11,6 +11,7 @@ export const MST_EXPLORER_TX_URL = "https://testnet.mstscan.com/tx/";
 export const PG_DEAL_ACTIONS = [
   "proposeDeal",
   "acceptDeal",
+  "markDelivered",
   "release",
   "raiseDispute",
   "acceptResolution",

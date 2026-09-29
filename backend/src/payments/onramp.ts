@@ -1,4 +1,10 @@
 export type PaymentStatus = "created" | "paid" | "minted" | "funded" | "failed";
+export const PAYMENT_METHODS = ["upi_qr", "upi_id", "upi_app", "crypto"] as const;
+export type PaymentMethod = typeof PAYMENT_METHODS[number];
+
+export function isPaymentMethod(value: unknown): value is PaymentMethod {
+  return typeof value === "string" && (PAYMENT_METHODS as readonly string[]).includes(value);
+}
 
 export type PaymentRecord = {
   id: string;
@@ -6,6 +12,8 @@ export type PaymentRecord = {
   /** MockUSD base units (6 decimals). */
   amount: string;
   status: PaymentStatus;
+  /** User-selected display label; it is not evidence of a fiat transfer. */
+  method?: PaymentMethod | null;
   mintTx: string | null;
   fundTx: string | null;
   createdAt: string;
@@ -31,7 +39,7 @@ export interface PaymentSessionStore {
 
 export interface PaymentConfirmationStore extends PaymentSessionStore {
   /** Atomically claim a created/failed payment; retain hashes on retry. */
-  claimConfirmation(dealId: number): Promise<{ claimed: boolean; payment: PaymentRecord }>;
+  claimConfirmation(dealId: number, method?: PaymentMethod): Promise<{ claimed: boolean; payment: PaymentRecord }>;
   recordMinted(dealId: number, mintTx: string): Promise<PaymentRecord>;
   recordFunded(dealId: number, fundTx: string): Promise<PaymentRecord>;
   markFailed(dealId: number): Promise<PaymentRecord>;
@@ -63,6 +71,7 @@ export type OnrampSession = {
   amountUsd: string;
   status: PaymentStatus;
   upi: { payee: string; note: string };
+  upiUri: string;
 };
 
 export type PaymentConfirmationResult = {
@@ -117,12 +126,21 @@ export async function createOnrampSession(
   });
 
   const storedAmount = BigInt(payment.amount);
+  const amountInr = formatInrFromUsdBaseUnits(storedAmount);
+  const upi = { payee: DEMO_UPI_PAYEE, note: `deal-${dealId}` };
+  const upiUri = `upi://pay?${new URLSearchParams({
+    pa: upi.payee,
+    tn: upi.note,
+    am: amountInr,
+    cu: "INR",
+  }).toString()}`;
   return {
     paymentId: payment.id,
-    amountInr: formatInrFromUsdBaseUnits(storedAmount),
+    amountInr,
     amountUsd: storedAmount.toString(),
     status: payment.status,
-    upi: { payee: DEMO_UPI_PAYEE, note: `deal-${dealId}` },
+    upi,
+    upiUri,
   };
 }
 
@@ -135,12 +153,13 @@ export async function confirmOnrampPayment(
   store: PaymentConfirmationStore,
   chain: PaymentConfirmationChain,
   dealId: number,
+  method: PaymentMethod = "upi_qr",
 ): Promise<PaymentConfirmationResult> {
   if (!Number.isSafeInteger(dealId) || dealId < 1) {
     throw new RangeError("Deal ID must be a positive safe integer");
   }
 
-  const claim = await store.claimConfirmation(dealId);
+  const claim = await store.claimConfirmation(dealId, method);
   if (!claim.claimed) {
     return {
       status: claim.payment.status,

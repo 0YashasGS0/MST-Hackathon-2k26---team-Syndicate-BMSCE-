@@ -5,22 +5,25 @@
 
 ## Current state
 - **Working on:** PG-owned payment, auth, and gas-drip integration for B1's shared Node backend
-- **Done & usable by others:** base-unit MockUSD mint helper; idempotent on-ramp services and routes; SQLite payments/payouts adapter; B1 viem adapter; nonce-based wallet login with signed session cookie; generic injected EIP-1193 connector; fail-closed SARAL connector stub; gas-drip helper/store
-- **Blocked by:** deployed addresses are not in `deployments.md`; B1 needs to mount the PG router and invoke the gas-drip hook; SARAL remains disabled/fail-closed until the mentor SDK documentation arrives
+- **Done & usable by others:** base-unit MockUSD mint helper; idempotent on-ramp services and routes; UPI URI and display-only payment-method persistence; SQLite payments/payouts adapter; B1 viem adapter; nonce-based wallet login with signed session cookie; EIP-1193 wallet and transaction helpers; gas-drip helper/store; SARAL fail-closed stub retained but dropped from the hackathon login flow
+- **Blocked by:** B1 must mount the PG routers and invoke the gas-drip hook; B2 must expose the browser wallet modules through `@kernel-exploits/shared`; the FE login and payment flow must consume the wallet login, UPI URI, and payment method; runnable Vitest setup and verifiable deployment records are still needed
 
 ## Requests to others
 <!-- Format: - [ ] @B1/@B2/@PG/@FE: what you need — why (hh:mm) -->
-- [ ] @nikil-dev (B1): reconcile the backend path before integration: latest `origin/nikil-dev` is Node/Express/TypeScript under `backend/backend/`, while PG modules are under `backend/`. Confirm the canonical path, replace the payments placeholder with `createPgIntegration(...).paymentsRouter`, mount its `authRouter`, and call `gasDripAddress(address)` after KYC approval.
-- [ ] @nikil-dev (B1): provide a backend test command/dependency for PG tests. The B1 package currently has no test script or Vitest dependency; PG tests use Vitest and need a runnable setup after paths are reconciled.
-- [ ] @B1/@B2: `getCaller` is now session-based; swap your stub at merge. Read the verified address from the PG `getCaller(req)` helper; the `x-user-address` header is ignored unless `AUTH_DEV_HEADER=true`.
-- [ ] @nikil-dev (B1): deploy/verify contracts and fill `deployments.md`; confirm ORG allowance and `DEPLOY_BLOCK`. The current `main` deployment record is blank.
+- [ ] @nikil-dev (B1): the backend is now consolidated under `backend/`; wire `createPgIntegration(...)` with B1's shared `db`, `pub`, and `org`, mount its `paymentsRouter` and `authRouter`, and invoke `gasDripAddress(address)` after KYC approval. Remove B1's duplicate payment routes/table definitions at merge while preserving the indexer's compatible payout columns.
+- [ ] @nikil-dev (B1): resolve the `backend/src/auth.ts` collision by retaining PG's API-key middleware and session auth. `getCaller(req)` reads the verified session; B2 should re-export it rather than trusting `x-user-address`.
+- [ ] @nikil-dev (B1): add Vitest to the merged backend package and replace the placeholder `test` script. From `backend/`, PG's focused command is `npx vitest run test/auth.test.ts test/wallet-connector.test.ts test/transaction-helper.test.ts test/payments.test.ts`.
+- [ ] @nikil-dev (B1): provide real deployment transaction hashes, block numbers, explorer links, and verification status in `deployments.md`; confirm the ORG allowance and `DEPLOY_BLOCK` before end-to-end payment QA.
+- [ ] @B2 (yashas): export PG's browser-safe `wallet-connector.ts` and `transaction-helper.ts` through `@kernel-exploits/shared` with the package build so FE does not import browser code from `backend/`.
+- [ ] @FE (chandana): use the existing wallet SIWE flow for login; consume session `upiUri`, send `{ method: "upi_qr" | "upi_id" | "upi_app" | "crypto" }` on confirmation, and use the shared wallet/transaction exports after B2 publishes them.
 - [ ] @B2: confirm whether any PG endpoint consumes `hashSow` / `hashJson`; current PG flows do not hash SOW or reasoning data.
-- [ ] @MST mentors / PG: provide SARAL SDK docs and confirm whether its login returns an EIP-1193 provider or a transaction-signing API. The repository's `docs/sdk/README.md` says SARAL docs have not been received.
 
 ## Interface changes
 <!-- Any change to endpoints, JSON shapes, ABI, shared/ files. Also update docs/API.md. -->
-- FE handoff: `discoverWallets()` + `createInjectedWalletConnector(provider)` in `backend/src/auth/wallet-connector.ts`; use EIP-6963 first, MetaMask primary, BridgeKey only when it announces EIP-1193, then `window.ethereum` fallback. `connect()` checks/adds/switches to chain `0x5752035`. Bind `accountsChanged` with `bindWalletSession(connector, { onLoginRequired })` to clear `/auth/logout` and prompt a fresh SIWE login; `chainChanged` should disable actions off MST. `getTestGasStatus()` provides the low-gas message and faucet link. `sendPgContractAction()` in `backend/src/auth/transaction-helper.ts` handles `proposeDeal`, `acceptDeal`, `release`, `raiseDispute`, `acceptResolution`, `escalate`, and `fund`, waits for successful receipt, and returns `{ txHash, explorerUrl }`.
-- `docs/API.md`: added the wallet discovery, session event, low-gas UX, contract action helper, receipt, and explorer-link handoff. Auth endpoints and payloads did not change.
+- FE handoff: `discoverWallets()` + `createInjectedWalletConnector(provider)` in `backend/src/auth/wallet-connector.ts`; use EIP-6963 first, MetaMask primary, BridgeKey only when it announces EIP-1193, then `window.ethereum` fallback. Bind `accountsChanged` with `bindWalletSession(connector, { onLoginRequired })` to clear `/auth/logout` and prompt a fresh SIWE login; `chainChanged` should disable actions off MST. `getTestGasStatus()` provides the low-gas message and faucet link. After B2 exports the browser modules through `@kernel-exploits/shared`, FE uses `sendPgContractAction()` for `proposeDeal`, `acceptDeal`, `markDelivered`, `release`, `raiseDispute`, `acceptResolution`, `escalate`, and `fund`; it waits for a successful receipt and returns `{ txHash, explorerUrl }`.
+- `docs/API.md`: added the wallet discovery, session event, low-gas UX, contract action helper, receipt, explorer-link, `upiUri`, and payment-method handoff. Auth endpoints and payloads did not change.
+- `/onramp/:dealId/session` now includes `upiUri`; `/onramp/:dealId/confirm` accepts a required display-only `method` and persists it for payment history. `Payment.method` is nullable until confirmation. `sendPgContractAction` includes `markDelivered`.
+- Browser wallet/transaction modules remain in PG-owned `backend/src/auth/` until B2 exports them through the B2-owned `shared/` package; `docs/API.md` now documents that handoff rather than telling FE to import backend code.
 - SARAL is dropped from the hackathon path but its connector remains fail-closed; leave `SARAL_ENABLED=false`.
 - `docs/API.md`: session response now specifies `upi: { payee, note }`; payment and payout amounts are specified as MockUSD base-unit strings, with formatted display fields; wallet auth now uses `/auth/nonce`, `/auth/verify`, and `/auth/logout` with a signed session cookie; SARAL remains fail-closed.
 
@@ -33,6 +36,13 @@
 - **Tested:** how it was verified (curl, test, explorer tx link)
 - **Next:** what comes next for this role
 -->
+
+### 2026-09-29 — PG payment UX and merge-plan alignment
+- **What:** Added the mock UPI deep link to on-ramp sessions, accepted and stored the confirmation method as display-only payment metadata, included `markDelivered` in the transaction helper, and aligned the API/progress handoff with the team merge plan. Recorded B1, B2, and FE integration requests without editing their owned paths. SARAL stays fail-closed and out of the hackathon login flow.
+- **Files:** `backend/src/payments/onramp.ts`, `backend/src/payments/routes.ts`, `backend/src/payments/sqlite-store.ts`, `backend/src/payments/schema.sql`, `backend/src/auth/transaction-helper.ts`, `docs/API.md`, `docs/progress/PG.md`
+- **How to use:** Session response contains `upiUri` using the demo payee, note, and INR amount. POST `/onramp/:dealId/confirm` with `{ method: "upi_qr" | "upi_id" | "upi_app" | "crypto" }`; the method is returned in payment history as display-only data. FE's action list now includes `markDelivered`.
+- **Tested:** `git diff --check` passed. Tests and typecheck were not run; this checkout has no Node/npm executable or backend package manifest.
+- **Next:** B1 mounts PG routers and gas drip; B2 exports browser helpers from `shared/`; FE switches to wallet login and consumes the documented payment fields; then run the focused Vitest command once merged package dependencies are available.
 
 ### 2026-09-29 — PG wallet connection and transaction handoff
 - **What:** Added EIP-6963 discovery for MetaMask and an EIP-1193 BridgeKey provider, legacy injected fallback, MST chain switch/add configuration, user rejection messaging, account-change logout/re-login binding, off-chain action blocking, low-test-gas UX status, and a viem contract-call helper for the requested escrow actions. SARAL remains fail-closed. Documented the FE interface.

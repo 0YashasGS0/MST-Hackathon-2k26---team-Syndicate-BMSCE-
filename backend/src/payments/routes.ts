@@ -6,6 +6,7 @@ import {
   confirmOnrampPayment,
   createOnrampSession,
   OnrampConflictError,
+  isPaymentMethod,
   type PaymentConfirmationChain,
   type PaymentConfirmationStore,
   type PaymentHistoryStore,
@@ -71,11 +72,16 @@ export function createPaymentsRouter(dependencies: PaymentsRouteDependencies): R
   router.post("/onramp/:dealId/confirm", requireApiKey, async (request: Request, response: Response) => {
     try {
       const dealId = parseDealId(request.params.dealId);
+      const method = request.body?.method;
+      if (!isPaymentMethod(method)) {
+        throw new TypeError("method must be one of: upi_qr, upi_id, upi_app, crypto");
+      }
       response.json(
         await confirmOnrampPayment(
           dependencies.confirmationStore,
           dependencies.confirmationChain,
           dealId,
+          method,
         ),
       );
     } catch (error) {

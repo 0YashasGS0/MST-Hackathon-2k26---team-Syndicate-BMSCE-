@@ -27,3 +27,4 @@
 | pre | Software-only (no hardware kit) | Team |
 | pre | Dispute scores are integers 0–100; split computed only by shared formula | Team |
 | 09-28 | SOW hash = keccak256(RFC 8785 canonical JSON) via `shared/` `hashSow` (schema draft `sow/v1`, tests passing; see `docs/progress/B2.md`) | B2 |
+| 09-29 | PG on-ramp sessions include a UPI URI; confirmation stores the selected payment method as display-only metadata | PG |

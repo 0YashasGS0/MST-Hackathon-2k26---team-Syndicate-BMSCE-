@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS payments (
   amount TEXT NOT NULL, -- MockUSD base units (6 decimals)
   status TEXT NOT NULL DEFAULT 'created'
     CHECK (status IN ('created', 'paid', 'minted', 'funded', 'failed')),
+  method TEXT CHECK (method IN ('upi_qr', 'upi_id', 'upi_app', 'crypto')),
   mint_tx TEXT,
   fund_tx TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
