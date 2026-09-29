@@ -1,4 +1,4 @@
-# Sakshi — AI-mediated escrow payments on MST Blockchain
+# Yescro — AI-mediated escrow payments on MST Blockchain
 
 **Pay anyone for work, safely.** The buyer's money is locked in an escrow smart contract on
 [MST Blockchain](https://mstblockchain.com) until the work is delivered. If there's a disagreement, an AI agent
