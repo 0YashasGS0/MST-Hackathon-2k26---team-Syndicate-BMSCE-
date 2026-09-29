@@ -6,7 +6,7 @@
 ## Checkpoints
 | Hour | Goal | Status |
 |---|---|---|
-| 1 | Contracts live + verified; `docs/API.md` frozen | ⬜ |
+| 1 | Contracts live + verified; `docs/API.md` frozen | ✅ |
 | 4 | Happy path via API | ⬜ |
 | 6 | Happy path in UI | ⬜ |
 | 7 | WASMify decision (SDK or fallback) | ⬜ |
@@ -15,8 +15,8 @@
 | 10 | Feature freeze | ⬜ |
 
 ## Deployed (see deployments.md for full details)
-- MockUSD: —
-- DealEscrow: —
+- MockUSD: 0x528707b3cd2266c07744b680b5c9dc08a9886472
+- DealEscrow: 0x653aa806b4b00d13446aeba96a6be60a68b1aefa
 
 ## Team-wide blockers
 - none
