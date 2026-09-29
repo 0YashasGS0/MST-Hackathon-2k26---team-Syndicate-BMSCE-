@@ -97,7 +97,7 @@ describe("SOW negotiation router", () => {
 
     const got = await request(app).get(`/drafts/${id}`).set("x-user-address", SELLER).expect(200);
     const stored = parseSow(got.body.latestSow.sow);
-    expect(got.body.status).toBe("approved");
+    expect(got.body).toMatchObject({ status: "signed", stage: "approved" });
     expect(got.body.latestSow.approvals).toEqual({ buyer: true, seller: true });
     expect(s.body.proposeDealArgs).toEqual({
       seller: stored.seller,
@@ -110,7 +110,7 @@ describe("SOW negotiation router", () => {
 
     const txHash = "0x" + "ab".repeat(32);
     const linked = await request(app).post(`/drafts/${id}/link`).set("x-user-address", BUYER).send({ dealId: 0, txHash }).expect(200);
-    expect(linked.body).toMatchObject({ status: "linked", dealId: 0, linkTxHash: txHash });
+    expect(linked.body).toMatchObject({ status: "signed", stage: "linked", dealId: "0", linkTxHash: txHash });
   });
 
   it("rejects approving a stale version", async () => {
@@ -158,8 +158,9 @@ describe("SOW negotiation router", () => {
     expect(merge.status).toBe(200);
     expect(merge.body.sow.amount).toBe("100000000");
     expect(merge.body.sow.deliveryDeadline).toBe(T0 + 7 * 86400);
-    expect(merge.body.conflicts.some((c: string) => c.includes("amount") && c.includes("999000000"))).toBe(true);
-    expect(merge.body.conflicts.some((c: string) => c.includes("deliveryDeadline"))).toBe(true);
+    expect(merge.body.conflictNotes.some((c: string) => c.includes("amount") && c.includes("999000000"))).toBe(true);
+    expect(merge.body.conflictNotes.some((c: string) => c.includes("deliveryDeadline"))).toBe(true);
+    expect(merge.body.conflicts).toEqual([]); // no structured conflict: requestedDeliveryDays not given
   });
 
   it("a stranger cannot approve (or read) the draft", async () => {

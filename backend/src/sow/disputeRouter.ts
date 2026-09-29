@@ -1,4 +1,5 @@
 // B2: GET /deals/:id/verify — recompute an agent ruling from stored data and compare it with the chain.
+// Also GET /deals/:id/sow (alias /deals/:id/agreement): the agreed SOW version of the draft linked to deal :id.
 // This is a convenience view: the FE verify page must run verifyRuling() itself in the browser (with split.wasm
 // and reasoningHash read directly from MST), not trust this endpoint's `result`.
 import express, { type NextFunction, type Request, type Response, type Router } from "express";
@@ -10,6 +11,7 @@ import { isAddress, isHttpUrl, requireEnv } from "./env";
 import type Database from "better-sqlite3";
 import { getCaller as defaultGetCaller, type GetCaller } from "./auth";
 import { SowStore } from "./store";
+import { sowVersionView } from "./views";
 
 /** DealEscrow.Status, in contract order. */
 export const DEAL_STATUS = [
@@ -121,6 +123,20 @@ export function createDisputeRouter(deps: DisputeRouterDeps = {}): Router {
   const wasm: Promise<SplitWasm> = loadSplitWasm(deps.wasmBytes ?? defaultWasmBytes());
 
   const router = express.Router();
+  const fail = (res: Response, status: number, code: string, message: string) => void res.status(status).json({ error: { code, message } });
+
+  // The linked deal's agreed SOW as a SowVersion (with signatures). Parties of the deal only.
+  router.get(["/deals/:id/sow", "/deals/:id/agreement"], (req, res) => {
+    const who = getCaller(req)?.toLowerCase();
+    if (!who || !isAddress(who)) return fail(res, 401, "Unauthorized", "sign in first (no caller identity on this request)");
+    const idParam = String(req.params.id);
+    if (!/^\d+$/.test(idParam)) return fail(res, 400, "BadRequest", "deal id must be a non-negative integer");
+    const linked = store.getSowForDeal(idParam);
+    if (!linked) return fail(res, 404, "NotFound", "no agreed SOW is linked to this deal");
+    const draft = store.getDraft(linked.draftId)!;
+    if (who !== draft.buyer && who !== draft.seller) return fail(res, 403, "Forbidden", "caller is not a party to this deal");
+    res.json(sowVersionView(store.getVersion(linked.draftId, linked.version)!));
+  });
 
   router.get("/deals/:id/verify", async (req, res) => {
     const idParam = String(req.params.id);
@@ -177,8 +193,8 @@ export function createDisputeRouter(deps: DisputeRouterDeps = {}): Router {
     res.json({ dealId, source, verifiable: true, reasoning, sow, onchain: onchainOut, result, ...(resolution && { resolution }) });
   });
 
-  router.use("/deals/:id/verify", (err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    console.error("[verify] unhandled error:", err instanceof Error ? err.message : err);
+  router.use("/deals/:id", (err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    console.error("[deals] unhandled error:", err instanceof Error ? err.message : err);
     res.status(500).json({ error: { code: "Internal", message: "internal error" } });
   });
 

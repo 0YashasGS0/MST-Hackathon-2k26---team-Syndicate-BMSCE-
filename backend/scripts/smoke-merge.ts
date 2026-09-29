@@ -41,8 +41,9 @@ try {
   for (const d of result.sow.deliverables) console.log(`  ${d.id.padEnd(4)} ${String(d.weightBps).padStart(5)} bps  ${d.title}`);
   console.log(`  sum  ${result.sow.deliverables.reduce((s, d) => s + d.weightBps, 0)} bps`);
   console.log(`exclusions: ${result.sow.exclusions.join("; ") || "(none)"}`);
-  console.log(`conflicts: ${result.conflicts.length}`);
-  for (const c of result.conflicts) console.log(`  - ${c}`);
+  console.log(`conflicts: ${result.conflictNotes.length}`);
+  for (const c of result.conflictNotes) console.log(`  - ${c}`);
+  console.log(`requestedDeliveryDays: ${JSON.stringify(result.requestedDeliveryDays)}`);
   console.log(`sowHash: ${hashSow(result.sow)}`);
 } catch (err) {
   rec.print();

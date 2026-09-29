@@ -66,7 +66,7 @@ describe("PATCH /drafts/:id/terms", () => {
     const { id, v1 } = await approvedBoth(app);
     const res = await request(app).patch(`/drafts/${id}/terms`).set(as(BUYER)).send({ amount: "120000000", deliveryDeadline: T0 + 10 * 86400 });
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe("sow_proposed");
+    expect(res.body).toMatchObject({ status: "merged", stage: "sow_proposed" });
     expect(res.body.amount).toBe("120000000");
     const v2 = res.body.latestSow;
     expect(v2.version).toBe(2);
@@ -76,7 +76,7 @@ describe("PATCH /drafts/:id/terms", () => {
     expect(v2.sow.deliverables).toEqual(v1.sow.deliverables); // LLM content carried over, not re-generated
     expect(v2.sowHash).not.toBe(v1.sowHash);
     expect(v2.sowHash).toBe(hashSow(parseSow(v2.sow)));
-    expect(v2.conflicts.at(-1)).toMatch(/amount 100000000 → 120000000/);
+    expect(v2.conflictNotes.at(-1)).toMatch(/amount 100000000 → 120000000/);
     // stale approval on v1 is now rejected
     const stale = await request(app).post(`/drafts/${id}/approve-sow`).set(as(SELLER)).send({ party: "seller", version: 1 });
     expect(stale.body.error.code).toBe("StaleVersion");
@@ -163,7 +163,7 @@ describe("on-chain link verification", () => {
     expect(res.status).toBe(422);
     expect(res.body.error).toMatchObject({ code: "LinkVerificationFailed", message: expect.stringMatching(/amount 1/) });
     const got = await request(app).get(`/drafts/${id}`).set(as(BUYER)).expect(200);
-    expect(got.body.status).toBe("approved"); // not linked
+    expect(got.body).toMatchObject({ status: "signed", stage: "approved" }); // not linked
     expect(seen).toMatchObject({ dealId: 3, buyer: BUYER, seller: SELLER, amount: "100000000", sowHash: got.body.latestSow.sowHash });
   });
 
