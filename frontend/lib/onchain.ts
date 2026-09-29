@@ -7,7 +7,7 @@ import { ESCROW_ADDRESS, escrowAbi } from "./contracts";
 import { demoWalletAccount } from "./device-key";
 import { activeConnector } from "./wallet";
 
-type EscrowFn = "proposeDeal" | "acceptDeal" | "markDelivered" | "release" | "raiseDispute" | "acceptResolution" | "escalate" | "claimTimeout";
+type EscrowFn = "acceptDeal" | "markDelivered" | "release" | "raiseDispute" | "acceptResolution" | "escalate" | "claimTimeout";
 
 const publicClient = () => createPublicClient({ chain: mst, transport: http() });
 
