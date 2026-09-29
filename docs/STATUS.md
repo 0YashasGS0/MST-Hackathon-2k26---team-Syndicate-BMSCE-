@@ -6,7 +6,7 @@
 ## Checkpoints
 | Hour | Goal | Status |
 |---|---|---|
-| 1 | Contracts live + verified; `docs/API.md` frozen | ⬜ |
+| 1 | Contracts live + verified; `docs/API.md` frozen | ✅ |
 | 4 | Happy path via API | ⬜ |
 | 6 | Happy path in UI | ⬜ |
 | 7 | WASMify decision (SDK or fallback) | ⬜ |
@@ -15,11 +15,11 @@
 | 10 | Feature freeze | ⬜ |
 
 ## Deployed (see deployments.md for full details)
-- MockUSD: —
-- DealEscrow: —
+- MockUSD: 0x528707B3CD2266c07744b680b5c9dc08a9886472
+- DealEscrow: 0x653aA806b4b00d13446aEbA96A6bE60A68B1AefA (deploy block 5800981)
 
 ## Team-wide blockers
-- Contracts not deployed yet: B1 runs `cd contracts && npm ci && node deploy.js --write` (docs/DEPLOY.md §1b), then `npm run preflight`
+- none (contracts deployed at block 5800981; before going live run `cd backend && npm run preflight` with the production `.env`)
 
 ## Decisions
 | Time | Decision | By |
