@@ -1,0 +1,84 @@
+{
+  "id": "A",
+  "name": "partial delivery",
+  "description": "Homepage fine, menu 12/20 with missing prices, contact form broken.",
+  "sow": {
+    "version": "sow/v1",
+    "title": "Landing page for Crumb & Co. bakery",
+    "buyer": "0x1111111111111111111111111111111111111111",
+    "seller": "0x2222222222222222222222222222222222222222",
+    "token": "0x3333333333333333333333333333333333333333",
+    "amount": "100000000",
+    "deliveryDeadline": 1900000000,
+    "reviewWindowSecs": 172800,
+    "deliverables": [
+      {
+        "id": "D1",
+        "title": "Responsive homepage",
+        "description": "Homepage with the bakery's story and opening hours.",
+        "acceptanceCriteria": [
+          "Renders correctly at 375px and 1440px widths",
+          "Shows the bakery's story and opening hours"
+        ],
+        "weightBps": 5000
+      },
+      {
+        "id": "D2",
+        "title": "Menu page",
+        "description": "Page listing every product with its price.",
+        "acceptanceCriteria": [
+          "All 20 menu items are listed",
+          "Every item shows its price"
+        ],
+        "weightBps": 3000
+      },
+      {
+        "id": "D3",
+        "title": "Contact form",
+        "description": "Contact form that emails the owner.",
+        "acceptanceCriteria": [
+          "Submitting the form delivers an email to the owner's inbox",
+          "Required fields are validated before submit"
+        ],
+        "weightBps": 2000
+      }
+    ],
+    "exclusions": [
+      "Hosting costs",
+      "Logo design"
+    ]
+  },
+  "deliveryNotes": "Seller: delivered the homepage, the menu page and the contact form on the staging link. All three pages are live.",
+  "complaint": "The homepage is fine. The menu page only lists 12 of our 20 products and several of those have no price. The contact form submits but no email ever arrives in my inbox.",
+  "evidenceNotes": "E1 homepage-mobile.png and homepage-desktop.png: homepage renders correctly at phone and desktop widths, story and opening hours visible. E2 menu-screenshot.png: menu page shows 12 items; 4 of them have no price. E3 form-test.mp4: form submitted at 10:02 with all fields filled; owner inbox still empty at 11:05. Validation messages do appear when fields are left empty.",
+  "groundTruth": {
+    "D1": [
+      {
+        "verdict": "met"
+      },
+      {
+        "verdict": "met"
+      }
+    ],
+    "D2": [
+      {
+        "verdict": "partial",
+        "satisfied": 12,
+        "total": 20
+      },
+      {
+        "verdict": "partial",
+        "satisfied": 8,
+        "total": 12
+      }
+    ],
+    "D3": [
+      {
+        "verdict": "not_met"
+      },
+      {
+        "verdict": "met"
+      }
+    ]
+  }
+}

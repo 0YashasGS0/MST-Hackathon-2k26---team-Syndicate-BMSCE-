@@ -44,6 +44,7 @@ export async function mintMockUsd({
 
   const mintTx = await orgClient.writeContract({
     account: orgClient.account,
+    chain: orgClient.chain,
     address: usdAddress,
     abi: MOCK_USD_MINT_ABI,
     functionName: "mint",

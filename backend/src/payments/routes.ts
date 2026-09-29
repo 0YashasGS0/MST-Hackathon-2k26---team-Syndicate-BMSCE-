@@ -56,7 +56,7 @@ export function createPaymentsRouter(dependencies: PaymentsRouteDependencies): R
 
   router.post("/onramp/:dealId/session", requireApiKey, async (request: Request, response: Response) => {
     try {
-      const dealId = parseDealId(request.params.dealId);
+      const dealId = parseDealId(String(request.params.dealId));
       const deal = await dependencies.readDeal(dealId);
       const session = await createOnrampSession(
         dependencies.sessionStore,
@@ -71,7 +71,7 @@ export function createPaymentsRouter(dependencies: PaymentsRouteDependencies): R
 
   router.post("/onramp/:dealId/confirm", requireApiKey, async (request: Request, response: Response) => {
     try {
-      const dealId = parseDealId(request.params.dealId);
+      const dealId = parseDealId(String(request.params.dealId));
       const method = request.body?.method;
       if (!isPaymentMethod(method)) {
         throw new TypeError("method must be one of: upi_qr, upi_id, upi_app, crypto");
@@ -91,7 +91,7 @@ export function createPaymentsRouter(dependencies: PaymentsRouteDependencies): R
 
   router.get("/deals/:id/payment", requireApiKey, async (request: Request, response: Response) => {
     try {
-      const dealId = parseDealId(request.params.id);
+      const dealId = parseDealId(String(request.params.id));
       const [payment, payout] = await Promise.all([
         dependencies.historyStore.getPayment(dealId),
         dependencies.historyStore.getPayout(dealId),

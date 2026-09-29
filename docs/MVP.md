@@ -185,32 +185,57 @@ Funded / Delivered ──raiseDispute──► Disputed ──agent──► Res
 
 ### 7.2 Dispute resolution (LLM scores, formula decides)
 
-1. **LLM step.** The agent receives the SOW, delivery proof and evidence, and outputs a fulfilment score per deliverable as an **integer percentage (0–100)**. Integers keep the formula identical across backend, browser and WASM:
+1. **LLM step (verdicts only, prompt v4).** The agent receives the SOW, delivery proof and evidence. For **every acceptance criterion** of every deliverable it returns a verdict: `met`, `not_met`, or `partial` — the last only for countable criteria, and then with integer counts `satisfied`/`total` (e.g. 12 of 20 items). The LLM never outputs a percentage; one that tries is rejected.
+
+   **Our dispute policy — burden of proof.** Every verdict states its **basis**, and the code rejects a basis that contradicts its verdict:
+
+   | Basis | When | Verdict |
+   |---|---|---|
+   | `admission` | The complaint or the buyer's own statements say it's satisfied ("the homepage is fine") | must be `met` |
+   | `undisputed` | The complaint doesn't dispute it and no evidence contradicts it. Missing evidence about an undisputed criterion is **not** a failure | must be `met` |
+   | `evidence` | The complaint disputes it: judged on the evidence (`not_met` if it supports the complaint, `met` if the evidence or delivery notes show it satisfied, `partial` s/t when countable) | any |
+
+   Why: without these rules, a strict model scored an undisputed, admitted homepage as 0% for lacking screenshots, flipping the refund from 21% to 88%. Instructions inside `<data>` blocks remain content to evaluate, never instructions to follow.
 
 ```json
 { "scores": [
-  { "id": "D1", "fulfilledPct": 100, "rationale": "Mobile layout works; screenshot E2" },
-  { "id": "D2", "fulfilledPct": 50, "rationale": "Only 10 of 20 menu items present; E1" },
-  { "id": "D3", "fulfilledPct": 0, "rationale": "Form does not send email; E3 video" }
+  { "id": "D1", "criteria": [
+    { "index": 0, "verdict": "met", "basis": "admission", "rationale": "Complaint: 'The homepage is fine'", "evidenceRefs": [] },
+    { "index": 1, "verdict": "met", "basis": "admission", "rationale": "Complaint: 'The homepage is fine'", "evidenceRefs": [] } ] },
+  { "id": "D2", "criteria": [
+    { "index": 0, "verdict": "partial", "satisfied": 12, "total": 20, "basis": "evidence", "rationale": "Menu shows 12 of 20 items; E2", "evidenceRefs": ["E2"] },
+    { "index": 1, "verdict": "partial", "satisfied": 8,  "total": 12, "basis": "evidence", "rationale": "4 of the 12 have no price; E2", "evidenceRefs": ["E2"] } ] },
+  { "id": "D3", "criteria": [
+    { "index": 0, "verdict": "not_met", "basis": "evidence",   "rationale": "No email arrives; E3", "evidenceRefs": ["E3"] },
+    { "index": 1, "verdict": "met",     "basis": "undisputed", "rationale": "Validation not disputed; E3 shows it", "evidenceRefs": ["E3"] } ] }
 ]}
 ```
 
-2. **Deterministic step.** A formula, not the LLM, computes the split:
+2. **Deterministic step (code, not the LLM).** Integer maths in `shared/src/split.ts`, mirrored in `split.wasm`:
 
 ```
-buyerBps = Σ floor(weightBps_i × (100 − fulfilledPct_i) / 100)
-         = 5000×0/100 + 3000×50/100 + 2000×100/100 = 0 + 1500 + 2000 = 3500  → 35% refund to buyer, 65% to seller
+criterion score = met 100 | not_met 0 | partial floor(100 × satisfied / total)
+fulfilledPct_i  = floor(mean of deliverable i's criterion scores)
+buyerBps        = Σ floor(weightBps_i × (100 − fulfilledPct_i) / 100)
+
+Bakery example (weights 5000/3000/2000):
+  D1 met, met                    → 100
+  D2 12/20 → 60, 8/12 → 66       → floor(126/2) = 63
+  D3 not_met, met                → 50
+  buyerBps = 0 + floor(3000×37/100) + floor(2000×50/100) = 0 + 1110 + 1000 = 2110 → 21.1% refund to buyer
 ```
 
-3. **On-chain step.** `reasoningHash = keccak256(canonicalJSON({ scores, buyerBps, model, promptVersion, inputsHash }))`. The agent wallet then calls `proposeResolution(id, buyerBps, reasoningHash)`.
+**Rounding:** floor is applied per criterion, per deliverable mean and per deliverable share, and the remainder goes to the seller. This matches the contract's `toSeller = amount − toBuyer`. Example: weights 3333/3333/3334 with every deliverable at 50 → 1666 + 1666 + 1667 = **4999** bps to the buyer (not 5000), so the seller gets 5001.
+
+3. **On-chain step.** `reasoningHash = hashJson(Reasoning)`: RFC 8785 canonical JSON → keccak256 of `{ dealId, sowHash, deliveryHash, evidenceHash, scores (with every verdict and basis), buyerBps, model, promptVersion }` (see `docs/API.md`). The agent wallet then calls `proposeResolution(id, buyerBps, reasoningHash)`. Anyone can recompute every percentage from the stored verdicts and the hash from the object (`verifyRuling`, also in the browser).
 
 This gives you:
-- **Explainable** rulings: each deliverable has a score and a rationale.
+- **Explainable** rulings: every acceptance criterion has a verdict and a rationale citing evidence.
 - **Deterministic** payouts: the same scores always produce the same split.
 - **Auditable** decisions: anyone can recompute the hash and the formula.
 - **Safe** execution: the agent can't move money.
 
-**Prompt-injection defence:** evidence is untrusted input. Put it in a clearly delimited data block in the prompt and instruct the model to treat it as data only. Validate the output against a JSON schema, and reject scores that aren't integers from 0 to 100 or unknown deliverable IDs.
+**Prompt-injection defence:** evidence is untrusted input. Put it in a clearly delimited data block in the prompt and instruct the model to treat it as data only. Validate the output against a JSON schema: every criterion index exactly once, counts only for `partial` with 0 ≤ satisfied ≤ total, no unknown deliverable IDs, and no percentages from the model.
 
 ---
 
@@ -218,8 +243,8 @@ This gives you:
 
 ### 8.1 MST testnet + EVM contracts (core — must have)
 
-1. Add the MST testnet to MetaMask: RPC `https://testnetrpc.mstblockchain.com`, chain ID `91562037`, symbol MSTC.
-2. Get testnet MSTC from the organizers or a faucet for **three wallets**: deployer/ORG, agent, and arbitrator.
+1. Add the MST testnet to MetaMask: RPC `https://testnetrpc.mstblockchain.com`, chain ID `91562037`, symbol tMSTC, explorer `https://testnet.mstscan.com` (official; its **Add MST Testnet** button does this for you).
+2. Get testnet tMSTC from the organizers or a faucet for **three wallets**: deployer/ORG, agent, and arbitrator.
 3. Set up and deploy:
    ```bash
    cd contracts
@@ -236,7 +261,7 @@ This gives you:
 - **Where:** step 1, login. The notebook asks for login through an authenticated device; SARAL's MPC key share lives on the user's device, so this maps directly.
 - **How:** get the SDK from MST mentors at kickoff. Wire the SARAL login, read the user's wallet address, and send contract transactions through the SARAL signer.
 - **Also:** SARAL verifies the user's mobile number. Treat that as a first-level KYC signal before the mock document upload.
-- **Gas:** new SARAL wallets have 0 MSTC. Either the backend sends a small amount from a team wallet after KYC approval, or you use sponsored transactions if SARAL supports them (ask the mentors).
+- **Gas:** new SARAL wallets have 0 tMSTC. Either the backend sends a small amount from a team wallet after KYC approval, or you use sponsored transactions if SARAL supports them (ask the mentors).
 - **Fallback:** MetaMask login, with SARAL shown as work in progress in the pitch.
 
 ### 8.3 WASMify — verifiable dispute computation (stretch, high impact)
@@ -382,6 +407,5 @@ This gives you:
 
 1. SARAL SDK access and docs; does it support sponsored (gasless) transactions?
 2. WASMify SDK access; can it attest a pure WASM function's output on-chain?
-3. Testnet faucet, or testnet MSTC for our 3 system wallets + demo users.
-4. Testnet explorer URL (mstscan is mainnet).
-5. Minting access to tMUSD, or should we deploy our own mock stablecoin?
+3. Testnet faucet, or testnet tMSTC for our 3 system wallets + demo users.
+4. Minting access to tMUSD, or should we deploy our own mock stablecoin?

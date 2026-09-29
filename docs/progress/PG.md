@@ -37,6 +37,11 @@
 - **Next:** what comes next for this role
 -->
 
+### 2026-09-29 — Merged yashas (B1 + B2) into geeth-dev; PG's real auth/payments replace B1's placeholders (done by B2's agent at the repo owner's request)
+- **What:** merged `origin/yashas` (which already contains `nikil-dev`). Conflicts only in `backend/src/auth.ts` and `backend/src/payments/b1-integration.ts` → PG's real files (B1's placeholders had the same exports). B1's `index.ts` already calls `createPgIntegration({ database, publicClient, orgClient, escrowAddress, usdAddress, escrowAbi, usdAbi, sendContractTx })` and mounts `authRouter` + `paymentsRouter`, and injects PG's `getCaller` into B2's routers. Two type-only fixes for the shared stack (Express 5, strict viem types): `mint.ts` passes `chain: orgClient.chain` to `writeContract`; `routes.ts` stringifies route params before `parseDealId`.
+- **Files:** merge commit; `backend/src/payments/{mint,routes}.ts`
+- **Tested:** backend `tsc --noEmit` 0 errors; 195/195 tests (PG 22 + B2 173). Booted the combined app with PG mounted (test ORG key, placeholder addresses): `POST /drafts` via PG's `getCaller` (dev header) → 201; `/onramp/1/session` → 503 `AuthNotConfigured` without `BACKEND_API_KEY` (as designed).
+
 ### 2026-09-29 — PG payment UX and merge-plan alignment
 - **What:** Added the mock UPI deep link to on-ramp sessions, accepted and stored the confirmation method as display-only payment metadata, included `markDelivered` in the transaction helper, and aligned the API/progress handoff with the team merge plan. Recorded B1, B2, and FE integration requests without editing their owned paths. SARAL stays fail-closed and out of the hackathon login flow.
 - **Files:** `backend/src/payments/onramp.ts`, `backend/src/payments/routes.ts`, `backend/src/payments/sqlite-store.ts`, `backend/src/payments/schema.sql`, `backend/src/auth/transaction-helper.ts`, `docs/API.md`, `docs/progress/PG.md`
