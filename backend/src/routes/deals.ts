@@ -9,6 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { db } from "../db.js";
 import { pub, escrowAbi, ESCROW } from "../chain.js";
 import { requireApiKey, getCaller } from "../auth.js";
+import { sowStore } from "../sowStore.js";
 
 export const dealsRouter = Router();
 
@@ -52,13 +53,10 @@ dealsRouter.get("/deals/:id", requireApiKey, async (req, res) => {
       .prepare("SELECT tx_hash, name, args_json, block, log_index FROM chain_events WHERE deal_id = ? ORDER BY block ASC")
       .all(id) as any[];
       
-    const localDeal = db.prepare("SELECT draft_id FROM deals WHERE id = ?").get(id) as any;
-    let draftId = localDeal?.draft_id;
-    let title = "Deal";
-    if (draftId) {
-       // Just mock title for now since drafts table is gone, B2 handles it in their routes
-       title = "Deal " + id;
-    }
+    // The agreed SOW lives in B2's tables; title and draftId come from the draft linked to this deal.
+    const linked = sowStore.getSowForDeal(id);
+    const draftId = linked?.draftId;
+    const title = linked?.sow.title ?? `Deal ${id}`;
 
     res.json({
       id,

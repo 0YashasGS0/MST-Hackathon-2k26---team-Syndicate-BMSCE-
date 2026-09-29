@@ -66,4 +66,24 @@ CREATE TABLE IF NOT EXISTS resolutions (
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- PG-owned (same definitions as backend/src/payments/schema.sql); created here too because the indexer writes payouts.
+CREATE TABLE IF NOT EXISTS payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  deal_id INTEGER UNIQUE,
+  amount TEXT NOT NULL, -- MockUSD base units (6 decimals)
+  status TEXT NOT NULL DEFAULT 'created'
+    CHECK (status IN ('created', 'paid', 'minted', 'funded', 'failed')),
+  method TEXT CHECK (method IN ('upi_qr', 'upi_id', 'upi_app', 'crypto')),
+  mint_tx TEXT,
+  fund_tx TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS payouts (
+  deal_id INTEGER PRIMARY KEY,
+  to_buyer TEXT,
+  to_seller TEXT,
+  final_status TEXT,
+  tx_hash TEXT
+);
 `);

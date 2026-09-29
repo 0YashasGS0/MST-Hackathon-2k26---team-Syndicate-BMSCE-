@@ -8,7 +8,8 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { db } from "../db.js";
 import { org, escrowAbi, ESCROW, sendContractTx } from "../chain.js";
-import { requireApiKey, gasDripAddress } from "../auth.js";
+import { requireApiKey } from "../auth.js";
+import { gasDripAddress } from "../pg.js";
 
 export const kycRouter = Router();
 
