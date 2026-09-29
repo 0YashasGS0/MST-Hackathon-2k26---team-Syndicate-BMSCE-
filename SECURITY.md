@@ -10,14 +10,16 @@ arbitrator rules. This file lists the web-side defenses and what they do and do 
 |---|---|---|
 | Impersonation | Identity comes only from PG's signed session cookie (EIP-4361-style wallet sign-in, single-use nonce, HMAC, `HttpOnly`, `SameSite=Lax`, `Secure` in prod). The `x-user-address` dev header is refused in production. | `backend/src/auth.ts`, `security.ts` |
 | Unsafe deployment | Production start fails on dev auth, missing/weak secrets, wildcard CORS or demo fallbacks. | `security.ts` `configProblems` |
-| Privileged actions by users | KYC approval, arbitration and the case list need `X-Admin-Token` (constant-time compare), not the public API key. | `routes/kyc.ts`, `routes/{deals,resolve}.ts` |
+| Privileged actions by users | KYC approval needs `X-Admin-Token` (constant-time compare). The arbitrator console needs a wallet listed in `ARBITRATOR_ADDRESSES` (or the admin token), never just the public API key. | `routes/kyc.ts`, `dealAccess.ts` |
 | Acting on someone else's deal | Delivery (seller), evidence, dispute scoring and timeout (buyer/seller) are checked against the **on-chain** parties before any write. Drafts/SOWs: parties only; drafts are listable only by their own parties. | `dealAccess.ts`, `sow/router.ts` |
-| Forged SOW approval | Signatures are recovered with viem over the exact `sowHash`; only the caller (or a registered device key) is accepted. Versions are re-checked inside the write transaction. | `sow/router.ts` |
+| Forged SOW approval | Signatures are recovered with viem over the exact `sowHash`; only the caller's wallet or its **bound device key** is accepted. Versions are re-checked inside the write transaction. | `sow/router.ts`, `accounts.ts` |
+| Stolen session on a new device | One bound device per account; moving needs the security PIN (salted scrypt, 5 tries → 5 min lock) and starts a 24 h cooling period. | `accounts.ts` |
+| Money moved by the server | The user's own wallet signs `markDelivered`, `release`, `raiseDispute`, `acceptResolution`, `escalate`; the backend only signs platform actions. | `frontend/lib/onchain.ts` |
 | CSRF / cross-origin abuse | Exact-origin CORS allowlist with credentials; `SameSite=Lax` cookie; JSON-only APIs. | `security.ts` `corsMiddleware` |
 | XSS (device keys are in `localStorage`) | Strict CSP (no third-party scripts, no `eval` in prod, `object-src 'none'`, `base-uri`/`form-action 'self'`), React escaping, no `dangerouslySetInnerHTML`. | `frontend/next.config.ts` |
 | Clickjacking | `frame-ancestors 'none'` + `X-Frame-Options: DENY` on both apps. | `next.config.ts`, `security.ts` |
 | Brute force / DoS / cost abuse | Per-IP rate limits: global, sign-in, uploads, and LLM/wallet routes (`/resolve`, `/timeout`, `/merge-sow`, `/onramp`, admin). Body limit 100 KB; server header/request timeouts. | `security.ts`, `app.ts`, `index.ts` |
-| Malicious uploads | 10 MB/file, 5 files, MIME allowlist, random server-side names (the client filename is never used as a path), files never served back. Rejected KYC uploads are deleted. | `security.ts` `safeUpload` |
+| Malicious uploads | 20 MB/file (KYC: one 10 MB file), 5 files, MIME allowlist (images, PDF, text, ZIP, MP4/WebM/MOV), random server-side names (the client filename is never used as a path), files never served back. Rejected KYC uploads are deleted. | `security.ts` `safeUpload` |
 | Prompt injection | Party text is wrapped in escaped `<data>` blocks; the LLM output is schema-validated; money/deadlines/parties are server-controlled; the split is computed by code (`computeBuyerBps`), so injected text can't set it. Eval scenario D tests this. | `backend/src/agent/*` |
 | SQL injection | All queries are parameterized (`better-sqlite3` prepared statements). | everywhere |
 | Info leaks | Generic 500s (details logged, never sent), no `X-Powered-By`, `no-referrer`, chain/LLM error text trimmed. | `security.ts` `errorHandler` |
@@ -27,7 +29,6 @@ arbitrator rules. This file lists the web-side defenses and what they do and do 
 
 ## Known limits (accepted for the hackathon)
 - `BACKEND_API_KEY` ships to the browser: it throttles casual abuse, it is **not** authentication.
-- The device-key registry (`isAuthorizedSigner`) isn't implemented yet, so only wallet-key signatures are accepted on `approve-sow`.
 - The frontend's demo wallet (burner key in `localStorage`) and the mock backend are for demos; the mock backend is
   off in production unless `ENABLE_MOCK_BACKEND=true`.
 - Rate limits are in-memory, per instance. Put a shared store (Redis) behind `express-rate-limit` before scaling out.

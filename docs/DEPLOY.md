@@ -29,6 +29,7 @@ Set at least (generate every secret with `openssl rand -hex 32`):
 | `AUTH_SESSION_SECRET` | random, ≥ 32 bytes |
 | `BACKEND_API_KEY` | random, ≥ 16 bytes (also given to the frontend build) |
 | `ADMIN_TOKEN` | random, ≥ 24 bytes — operator/arbitrator only, never in the frontend |
+| `ARBITRATOR_ADDRESSES` | wallets that get the arbitrator console (comma-separated) |
 | `CORS_ORIGINS` | `https://app.example.com` |
 | `TRUST_PROXY` | `1` (Caddy in front) |
 | `ORG_KEY`, `AGENT_KEY`, `ARBITRATOR_KEY` | the system wallets |

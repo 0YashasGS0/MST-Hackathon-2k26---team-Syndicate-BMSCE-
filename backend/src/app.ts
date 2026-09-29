@@ -8,6 +8,7 @@ import { createPgIntegration } from "./payments/b1-integration.js";
 import { setGasDrip } from "./pg.js";
 import { createSowRouter, createDisputeRouter } from "./sow/index.js";
 import { sowStore } from "./sowStore.js";
+import { accounts } from "./accountsStore.js";
 import { pub, org, escrowAbi, usdAbi, ESCROW, USD, sendContractTx } from "./chain.js";
 import { db } from "./db.js"; // ensures tables exist on boot
 import { assertSafeConfig, corsMiddleware, errorHandler, rateLimits, securityHeaders } from "./security.js";
@@ -42,10 +43,11 @@ export function createApp() {
   });
 
   // Tighter per-IP limits where a request costs an LLM call, a wallet transaction, or a sign-in attempt.
-  app.use(["/auth/nonce", "/auth/verify", "/auth/saral"], rateLimits.auth());
+  app.use(["/auth/nonce", "/auth/verify", "/auth/saral", "/auth/pin", "/auth/new-device", "/users/by-phone"], rateLimits.auth());
   app.use(["/deals/:id/resolve", "/deals/:id/timeout", "/drafts/:id/merge-sow", "/onramp", "/admin", "/arbitrator/deals"], rateLimits.expensive());
   app.use(["/kyc/submit", "/deals/:id/delivery", "/deals/:id/evidence"], rateLimits.upload());
 
+  app.use(accounts.router); // device binding, PIN, profile, people (identity = PG session)
   app.use(kycRouter);
   app.use(dealsRouter);
   app.use(resolveRouter);
@@ -70,7 +72,8 @@ export function createApp() {
   }
 
   // B2 modules (merge plan): one SowStore on this connection, PG's getCaller as the only identity source.
-  app.use(createSowRouter({ store: sowStore, getCaller }));
+  // The account's bound device key may sign SOW approvals for it (FE signs with a device key).
+  app.use(createSowRouter({ store: sowStore, getCaller, isAuthorizedSigner: accounts.isAuthorizedSigner }));
   app.use(createDisputeRouter({ store: sowStore, getCaller }));
 
   app.use((_req, res) => void res.status(404).json({ error: { code: "NotFound", message: "no such route" } }));

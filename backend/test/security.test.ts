@@ -109,9 +109,16 @@ describe("uploads: identity, party checks, limits", () => {
     const other = await request(app).post("/kyc/submit").set(as(STRANGER)).field("address", BUYER).attach("file", Buffer.from("x"), { filename: "a.png", contentType: "image/png" });
     expect(other.status).toBe(403);
     expect(countUploads()).toBe(before);
-    const own = await request(app).post("/kyc/submit").set(as(BUYER)).attach("file", Buffer.from("x"), { filename: "a.png", contentType: "image/png" });
+    const own = await request(app)
+      .post("/kyc/submit")
+      .set(as(BUYER))
+      .field("name", "Priya Sharma")
+      .field("phone", "9000000001")
+      .field("pan", "ABCDE1234F")
+      .attach("file", Buffer.from("x"), { filename: "a.png", contentType: "image/png" });
     expect(own.status).toBe(200);
-    expect(own.body).toMatchObject({ address: BUYER, kycLevel: 1 });
+    expect(own.body).toMatchObject({ address: BUYER, kycLevel: 1, name: "Priya Sharma", phone: "9000000001" });
+    expect(JSON.stringify(own.body)).not.toContain("ABCDE1234F"); // the PAN is never stored or echoed
   });
 
   it("rejects oversized files (413) and disallowed types (400)", async () => {

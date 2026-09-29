@@ -1,103 +1,57 @@
-# backend — full B1 implementation (Hours 0–10) + PG's home
+# backend
 
-Node + Express + TypeScript + SQLite (better-sqlite3) + viem, following
-`docs/TEAM_ROADMAP.md` §1 end-to-end. This is the **one shared backend**
-everyone works inside — PG's payment routes are already mounted here
-(`src/routes/payments.ts`) on the same DB, chain clients, and auth as B1's.
-
-## Setup
-
-```bash
-cd backend
-npm install
-copy .env.example .env     # Windows; Mac/Linux: cp .env.example .env
-```
-
-Fill `.env`:
-- `ESCROW_ADDRESS` / `USD_ADDRESS` — from `deployments.md` once contracts are deployed
-- `ORG_KEY` / `AGENT_KEY` / `ARBITRATOR_KEY` — the 3 system wallets (`cast wallet new` ×5 per the roadmap; 2 more are the demo buyer/seller below)
-- `BACKEND_API_KEY` — the frontend sends this back in `X-API-Key`
-- `ADMIN_TOKEN` — separate token for the arbitrator console only
-- `DEPLOY_BLOCK` — block the contracts were deployed at
-- `DEMO_BUYER_KEY` / `DEMO_SELLER_KEY` — 2 funded testnet wallets, used only by `scripts/seed.ts`
+One Express 5 + SQLite (better-sqlite3) + viem service for every role. TypeScript runs directly with `tsx`
+(no build step). Interfaces are frozen in [`../docs/API.md`](../docs/API.md); security rules in
+[`../SECURITY.md`](../SECURITY.md).
 
 ## Run
 
 ```bash
-npm run dev      # dev, auto-reload
-npm run build && npm start   # production build
+cd ../shared && npm ci          # the backend imports @kernel-exploits/shared (install it first)
+cd ../backend && npm ci
+cp .env.example .env            # every variable is documented there
+npm run dev                     # http://localhost:5000, reloads on change
+npm start                       # production-style start (node --import tsx)
 ```
 
-`GET /health` for a liveness check. The indexer auto-starts: backfills from
-`DEPLOY_BLOCK`, then watches escrow events live over the WebSocket RPC.
-Inserts are idempotent — restarts never lose or duplicate history.
+`npm test` (vitest, no network), `npm run typecheck`. Demo data: `npm run seed` / `npm run reset` (B1, needs deployed
+contracts), `npm run seed:demo` (B2's four dispute scenarios). LLM tools: `npm run models`, `npm run smoke:merge`,
+`npm run smoke:score`, `npm run eval:disputes`.
 
-## Demo readiness (Hour 8–10)
+In production (`NODE_ENV=production`) the server **refuses to start** with dev auth, weak or missing secrets, a
+wildcard CORS or the demo fallbacks on. See [`../docs/DEPLOY.md`](../docs/DEPLOY.md).
 
-```bash
-npm run seed    # creates 4 demo deals: Funded, Delivered, ResolutionProposed, Escalated
-npm run reset   # wipes local data/, re-seeds from scratch, in under 2 minutes
-```
+## Layout
 
-## All endpoints
+| Path | Owner | What |
+|---|---|---|
+| `src/index.ts`, `src/app.ts` | B1 | server start (timeouts, graceful shutdown) / the app: security middleware, then every router |
+| `src/security.ts` | — | production config guard, CORS allowlist, headers, rate limits, admin token, upload limits, error handler |
+| `src/chain.ts`, `src/indexer.ts`, `src/db.ts` | B1 | viem clients + system wallets, event indexer (→ `chain_events`, `deals`, `payouts`), SQLite schema |
+| `src/dealView.ts`, `src/dealAccess.ts` | B1 | the one `Deal` shape (on-chain `getDeal` + local data); party / arbitrator guards |
+| `src/routes/{deals,kyc,resolve}.ts` | B1 | deal reads, delivery/evidence uploads, complaints, resolutions, KYC, AI dispute + arbitration |
+| `src/auth.ts`, `src/payments/` | PG | wallet sign-in + sessions (`getCaller`), UPI on-ramp → mint → `fundFor`, gas drip |
+| `src/accounts.ts` | — | device binding, security PIN (scrypt), profile, contact lookup, people; device-key registry |
+| `src/sow/`, `src/agent/` | B2 | `/drafts/*` negotiation + SOW store, AI merge and dispute scoring, `/deals/:id/{sow,agreement,verify}` |
 
-| Method | Path | Auth | Owner | Purpose |
-|---|---|---|---|---|
-| GET | `/health` | none | — | liveness check |
-| POST | `/kyc/submit` | X-API-Key | B1 | multipart: `address`, `file` — mock KYC upload |
-| POST | `/admin/kyc/:address/approve` | X-API-Key | B1 | `setKyc(address, true)` from ORG wallet |
-| GET | `/deals/:id` | X-API-Key | B1 | merges on-chain `getDeal` + local `chain_events` |
-| POST | `/deals/:id/delivery` | X-API-Key | B1 | file → keccak256 hash to sign `markDelivered` |
-| POST | `/deals/:id/evidence` | X-API-Key | B1 | file → keccak256 hash to sign `raiseDispute` |
-| POST | `/deals/:id/resolve` | X-API-Key | B1 | scores dispute (stub, see below), agent calls `proposeResolution` |
-| GET | `/deals/:id/verify` | X-API-Key | B1 | full reasoning object for FE's browser-side verify page |
-| POST | `/arbitrator/deals/:id/rule` | X-Admin-Token | B1 | human ruling → `arbitrate()` |
-| POST | `/deals/:id/timeout` | X-API-Key | B1 | calls `claimTimeout(id)` from ORG wallet |
-| POST | `/onramp/:dealId/session` | X-API-Key | PG | creates a payment row, returns mock UPI payload |
-| POST | `/onramp/:dealId/confirm` | X-API-Key | PG | idempotent: mint MockUSD → `fundFor(dealId)` |
-| GET | `/deals/:id/payment` | X-API-Key | PG | payment + payout records |
+## Endpoints
 
-Every route maps contract reverts to a clean `{ error, code, message }` JSON body
-via `src/errors.ts` (`decodeErrorResult` under the hood) — see done-checklist item
-"every contract revert shows up as a clear API error."
+| Method | Path | Who |
+|---|---|---|
+| GET | `/health` | anyone |
+| GET | `/auth/nonce` · POST `/auth/verify` · POST `/auth/logout` | wallet sign-in (PG) |
+| POST | `/auth/device/bind` · `/auth/new-device` · `/auth/pin` · `/auth/pin/verify` · `/auth/device` | signed in |
+| GET | `/users/me` · `/users/by-phone/:phone` · `/people` | signed in |
+| POST | `/kyc/submit` | signed in (own wallet) |
+| POST | `/admin/kyc/:address/approve` | `X-Admin-Token` |
+| GET/POST/PATCH | `/drafts`, `/drafts/:id`, `/drafts/:id/{sow,terms,merge-sow,conflicts,approve-sow,link}` | the draft's parties |
+| GET | `/deals?address=`, `/deals/:id`, `/deals/:id/{sow,agreement,complaint,resolution}` | the deal's parties (or an arbitrator) |
+| GET | `/deals/:id/verify` | anyone (public verification) |
+| POST | `/deals/:id/delivery` (seller) · `/deals/:id/evidence` · `/deals/:id/resolve` · `/deals/:id/timeout` | the deal's parties, checked on-chain |
+| GET | `/arbitrator/cases` · POST `/arbitrator/deals/:id/rule` | arbitrator wallet (`ARBITRATOR_ADDRESSES`) or `X-Admin-Token` |
+| POST | `/onramp/:dealId/session` · `/onramp/:dealId/confirm` · GET `/deals/:id/payment` | `X-API-Key` (PG) |
 
-## One thing still stubbed: `scoreDispute()`
-
-`src/scoreDispute.ts` is a placeholder — it always returns "fully delivered."
-**B2 owns the real version** (calls the LLM, validates JSON, returns
-`{ scores, buyerBps, reasoningHash }` — see `docs/TEAM_ROADMAP.md` §2).
-Swap the stub body for B2's import once it lands; the function signature is
-the agreed contract between B1 and B2, so tell B2 to match it exactly.
-
-## What PG still needs to add (not built here)
-
-- `POST /auth/saral` (SARAL login) and `gasDrip(address)` — §3 "Hour 6-9"
-- The SARAL signer adapter for the frontend
-- tMUSD / BridgeKey optional extras — §3 "Hour 9-10", only if time allows
-
-Add them to `src/routes/payments.ts` using the same `requireApiKey` + `db` +
-`chain.ts` clients already wired in — don't open a second database or a
-separate Express app.
-
-## Frontend connection ("the API key thing")
-
-Every route above except the arbitrator console needs:
-```
-X-API-Key: <BACKEND_API_KEY from .env>
-```
-The arbitrator route uses a **separate** `X-Admin-Token` header instead, so a
-normal frontend key can't rule on disputes.
-
-This is separate from wallet signing: users sign their own on-chain actions
-(`proposeDeal`, `acceptDeal`, `markDelivered`, `release`, `raiseDispute`,
-`acceptResolution`, `escalate`, `fund`) in their own wallet on the frontend.
-This backend only signs with the 3 system wallets for admin-style calls.
-
-## Notes
-
-- The chain is the source of truth for deal status/amounts. SQLite only
-  stores drafts, file hashes, reasoning objects, payments, and a local
-  mirror of chain events.
-- Never commit `.env`.
-- ABIs in `abi/` were hand-derived from `DealEscrow.sol`; double check
-  `MockUSD.json` against your actual `MockUSD.sol` source once you have it.
+Signed in = PG's session cookie (from `/auth/verify`). Every route also gets the security headers, the CORS allowlist
+and per-IP rate limits. Users sign the escrow's own actions (`markDelivered`, `release`, `raiseDispute`,
+`acceptResolution`, `escalate`) with their wallet; the backend only sends the platform's transactions (`fundFor`,
+`setKyc`, `proposeResolution`, `arbitrate`, `claimTimeout`).

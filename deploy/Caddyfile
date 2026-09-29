@@ -8,7 +8,7 @@
 {$API_DOMAIN} {
 	encode zstd gzip
 	request_body {
-		max_size 60MB
+		max_size 110MB
 	}
 	reverse_proxy backend:5000
 }

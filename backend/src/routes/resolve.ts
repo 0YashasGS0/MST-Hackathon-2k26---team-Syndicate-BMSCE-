@@ -6,8 +6,8 @@ import { DemoFallbackError, DisputeScoringError, LlmUnavailableError, scoreDispu
 import { sowStore as store } from "../sowStore.js";
 import { db } from "../db.js";
 import { requireApiKey } from "../auth.js";
-import { requireDealParty } from "../dealAccess.js";
-import { requireAdminToken } from "../security.js";
+import { requireArbitrator, requireDealParty } from "../dealAccess.js";
+import { readOnchainDeal, toDealView } from "../dealView.js";
 import { sendChainError } from "../errors.js";
 
 const DEAL_ID = /^\d+$/;
@@ -29,8 +29,8 @@ function filesSummary(dealId: number, kind: "delivery" | "evidence"): string {
 
 export const resolveRouter = Router();
 
-// Arbitrator routes use requireAdminToken (security.ts): a separate token, compared in constant time, so the
-// public frontend API key can't rule on disputes.
+// Arbitrator routes use requireArbitrator (dealAccess.ts): a signed-in wallet in ARBITRATOR_ADDRESSES, or the operator's
+// X-Admin-Token. The public frontend API key alone can't rule on disputes.
 
 // POST /deals/:id/resolve — load SOW + delivery/evidence, call scoreDispute(),
 // have the agent wallet call proposeResolution, store the full reasoning.
@@ -82,7 +82,7 @@ resolveRouter.post("/deals/:id/resolve", requireApiKey, requireDealParty(["buyer
 
 // POST /arbitrator/deals/:id/rule — human arbitrator's final call, admin-token protected.
 // The ruling is stored first (reasoningHash = hashJson(ruling)) so it is verifiable via /deals/:id/verify.
-resolveRouter.post("/arbitrator/deals/:id/rule", requireAdminToken, async (req: Request, res: Response) => {
+resolveRouter.post("/arbitrator/deals/:id/rule", requireArbitrator, async (req: Request, res: Response) => {
   if (!ESCROW || !arbitrator) return void res.status(500).json({ error: { code: "ChainUnconfigured", message: "chain not configured yet" } });
   if (!DEAL_ID.test(String(req.params.id))) return void res.status(400).json({ error: { code: "BadRequest", message: "deal id must be a non-negative integer" } });
   const dealId = Number(req.params.id);
@@ -102,7 +102,8 @@ resolveRouter.post("/arbitrator/deals/:id/rule", requireAdminToken, async (req: 
       functionName: "arbitrate",
       args: [BigInt(dealId), bps, reasoningHash],
     });
-    res.json({ reasoningHash, txHash: hash });
+    const deal = await readOnchainDeal(dealId).catch(() => null);
+    res.json({ ...(deal ? toDealView(dealId, deal) : {}), reasoningHash, txHash: hash }); // frontend expects the updated Deal
   } catch (err: any) {
     sendChainError(res, err);
   }

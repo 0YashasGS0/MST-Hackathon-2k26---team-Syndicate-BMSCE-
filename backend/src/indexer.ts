@@ -51,10 +51,10 @@ function storeLog(log: any) {
   if (dealId !== null) {
     upsertDealStatus.run(
       dealId,
-      log.args?.buyer ?? "",
-      log.args?.seller ?? "",
+      String(log.args?.buyer ?? "").toLowerCase(), // lowercase: lookups by wallet must not depend on checksum case
+      String(log.args?.seller ?? "").toLowerCase(),
       log.args?.amount?.toString() ?? "",
-      log.eventName
+      log.eventName // last event seen; the live status always comes from getDeal (dealView.ts)
     );
   }
   if (dealId !== null && log.eventName === "Settled") {
