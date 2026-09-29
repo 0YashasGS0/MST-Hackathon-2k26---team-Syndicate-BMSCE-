@@ -29,6 +29,12 @@
 - **Next:** what comes next for this role
 -->
 
+### Frontend package renamed to yescro
+- **What:** `frontend/package.json` / lockfile package name `frontend` → `yescro`; `frontend/README.md` title. The folder is still `frontend/`, so scripts and paths are unchanged.
+- **Files:** `frontend/package.json`, `frontend/package-lock.json`, `frontend/README.md`
+- **Tested:** `npm ls` resolves as `yescro@0.1.0`.
+- **Next:** —
+
 ### Rename to Yescro
 - **What:** product name Sakshi → **Yescro** everywhere it's shown (app header, page title, PWA manifest, login, QR scanner, account/help/FAQ/guide, error messages, mock UPI payee) and new tagline **"Life is uncertain, payments need not be."** on the login screen, page description and manifest. Transaction IDs now start with `YSC` instead of `SKS`. Root `README.md` and `docs/KICKSTART.md` updated with the name and tagline.
 - **Files:** `frontend/components/Header.tsx` (`APP_NAME`, new `TAGLINE`), `frontend/app/**`, `frontend/lib/{mocks,format}.ts`, `frontend/README.md`, `README.md`, `docs/KICKSTART.md`
