@@ -7,6 +7,7 @@ import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
+import { createLlmChain } from "./agent/createLlmClient.js";
 
 const isProd = () => process.env.NODE_ENV === "production";
 const WEAK = /^(change-me|changeme|test|secret|password|admin)/i;
@@ -32,6 +33,25 @@ export function configProblems(env: NodeJS.ProcessEnv = process.env): string[] {
   else if (env.CORS_ORIGINS.split(",").some((o) => o.trim() === "*")) p.push("CORS_ORIGINS must list exact origins, not *");
   if (env.AGENT_DEMO_FALLBACK === "true" || env.AGENT_FALLBACK_ON_FAILURE === "true") {
     p.push("AGENT_DEMO_FALLBACK / AGENT_FALLBACK_ON_FAILURE are demo-only and must be off in production");
+  }
+  // Chain: without these the payment routes are not mounted and the indexer, disputes and arbitration fail.
+  for (const name of ["ESCROW_ADDRESS", "USD_ADDRESS"]) {
+    const v = env[name] ?? "";
+    if (!/^0x[0-9a-fA-F]{40}$/.test(v) || /^0x0{40}$/.test(v)) p.push(`${name} must be the deployed contract address (deployments.md)`);
+  }
+  if (env.ESCROW_ADDRESS && env.ESCROW_ADDRESS.toLowerCase() === env.USD_ADDRESS?.toLowerCase()) {
+    p.push("ESCROW_ADDRESS and USD_ADDRESS must be different contracts");
+  }
+  if (!/^[1-9]\d*$/.test(env.DEPLOY_BLOCK ?? "")) p.push("DEPLOY_BLOCK must be the DealEscrow deploy block (deployments.md)");
+  const keys = ["ORG_KEY", "AGENT_KEY", "ARBITRATOR_KEY"];
+  for (const name of keys) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(env[name] ?? "")) p.push(`${name} must be a 0x-prefixed 32-byte private key`);
+  }
+  if (new Set(keys.map((k) => env[k]?.toLowerCase()).filter(Boolean)).size < keys.filter((k) => env[k]).length) {
+    p.push("ORG_KEY, AGENT_KEY and ARBITRATOR_KEY must be three different wallets (the AI must not be the arbitrator)");
+  }
+  if (!createLlmChain(env)?.length) {
+    p.push("no LLM configured: set LLM_CHAIN and its provider key (e.g. GROQ_API_KEY); SOW merge and disputes need it");
   }
   return p;
 }

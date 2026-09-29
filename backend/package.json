@@ -14,7 +14,8 @@
     "smoke:score": "tsx scripts/smoke-score.ts",
     "models": "tsx scripts/list-models.ts",
     "eval:disputes": "tsx scripts/eval-disputes.ts",
-    "seed:demo": "tsx scripts/seed-demo.ts"
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "preflight": "tsx scripts/preflight.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",
